@@ -2,8 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-const authRoutes = require('./routes/auth');
-const videoRoutes = require('./routes/video');
+const authRoutes = require('./src/routes/auth');
+const videoRoutes = require('./src/routes/video');
 
 const app = express();
 app.use(cors());

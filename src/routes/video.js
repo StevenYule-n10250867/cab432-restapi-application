@@ -19,6 +19,7 @@ router.post('/transcode', authMiddleware, (req, res) => {
   const { filename } = req.body;
   const inputPath = path.join(UPLOAD_DIR, filename);
   const outputPath = path.join(UPLOAD_DIR, `transcoded-${filename}.mp4`);
+
   const command = `ffmpeg -i "${inputPath}" -vcodec libx264 -preset veryfast "${outputPath}"`;
 
   exec(command, (err) => {
@@ -28,6 +29,7 @@ router.post('/transcode', authMiddleware, (req, res) => {
     res.json({ message: 'Transcoding complete', output: `transcoded-${filename}.mp4` });
   });
 });
+
 
 router.get('/files', authMiddleware, (req, res) => {
   const files = fs.readdirSync(UPLOAD_DIR).sort();
