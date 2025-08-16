@@ -43,7 +43,10 @@ async function sendTranscode(token, filename) {
       throw new Error(body.message || 'Unknown error');
     }
 
-    console.log(`Started job for ${filename}: ${body.jobId}`);
+    const jobUrl = `${SERVER}/jobs/${body.jobId}/report`;
+    console.log(`Started job for ${filename}`);
+    console.log(`   Report: ${jobUrl}`);
+
   } catch (err) {
     console.error(`Failed for ${filename}:`, err.message);
   }

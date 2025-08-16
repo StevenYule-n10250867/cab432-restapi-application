@@ -13,6 +13,8 @@ const passThrough = (_req, _res, next) => next();
 
 const router = express.Router();
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+const TRANSCODED_DIR = path.join(__dirname, '../transcoded');
+if (!fs.existsSync(TRANSCODED_DIR)) fs.mkdirSync(TRANSCODED_DIR, { recursive: true });
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 router.post('/transcode', authMiddleware, async (req, res) => {
@@ -35,7 +37,7 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     const inputSha  = await sha256File(inputPath);
 
     const outputName = `transcoded-${filename}.mp4`;
-    const outputPath = path.join(UPLOAD_DIR, outputName);
+    const outputPath = path.join(TRANSCODED_DIR, outputName);
     const cmd = `ffmpeg -y -i "${inputPath}" -vcodec libx264 -preset veryfast "${outputPath}"`;
     await new Promise((resolve, reject) => exec(cmd, (err) => err ? reject(err) : resolve()));
 
@@ -52,7 +54,7 @@ router.post('/transcode', authMiddleware, async (req, res) => {
       finishedAt: new Date().toISOString(),
       elapsedMs: t1 - t0,
       input:  { path: `/uploads/${filename}`,        sizeBytes: inputSize,  sha256: inputSha,  meta: inputMeta },
-      outputs:[{ type: 'mp4', path: `/uploads/${outputName}`, sizeBytes: outSizeNow, sha256: outputSha, meta: outputMeta }],
+      outputs:[{ type: 'mp4', path: `/transcoded/${outputName}`, sizeBytes: outSizeNow, sha256: outputSha, meta: outputMeta }],
       //thumbnails: thumbs
     });
   } catch (e) {
@@ -93,7 +95,7 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, (re
     }
   }
 
-  // JSON view (handy for debugging)
+  // JSON view
   if ((req.query.format || '').toLowerCase() === 'json') {
     return res.json(job);
   }
@@ -110,6 +112,7 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, (re
   res.set('Content-Type', 'text/html').send(`<!doctype html>
 <html><head><meta charset="utf-8">
 <title>Job ${esc(job.id)} Report</title>
+<p class="pill">User Role: <code>${esc(req.user?.role || 'unknown')}</code></p>
 <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;line-height:1.45}
   code,pre{background:#f6f8fa;padding:2px 6px;border-radius:4px}
