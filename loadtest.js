@@ -44,8 +44,7 @@ async function sendTranscode(token, filename) {
     }
 
     const jobUrl = `${SERVER}/jobs/${body.jobId}/report`;
-    console.log(`Started job for ${filename}`);
-    console.log(`   Report: ${jobUrl}`);
+    console.log(`Started job for ${filename} → ${jobUrl}`);
 
   } catch (err) {
     console.error(`Failed for ${filename}:`, err.message);
@@ -53,18 +52,25 @@ async function sendTranscode(token, filename) {
 }
 
 (async () => {
-  try {
-    const token = await getToken();
-    const files = fs.readdirSync(UPLOAD_DIR).filter(f => f.endsWith('.mp4'));
+  const token = await getToken();
+  const files = fs.readdirSync(UPLOAD_DIR).filter(f => f.endsWith('.mp4'));
 
+  const startTime = Date.now();
+  const durationMinutes = 5;
+
+  while ((Date.now() - startTime) < durationMinutes * 60 * 1000) {
+    const batch = [];
+
+    // Launch up to 3 parallel jobs per file
     for (const file of files) {
-        for (let i = 0; i < 1; i++) {
-            await sendTranscode(token, file);
-            await delay(1000);
-        }
-        }
+      for (let i = 0; i < 3; i++) {
+        batch.push(sendTranscode(token, file));
+      }
+    }
 
-  } catch (err) {
-    console.error(`Fatal error: ${err.message}`);
+    await Promise.all(batch);
+    await delay(3000); // Small pause between waves
   }
+
+  console.log('Load test complete.');
 })();

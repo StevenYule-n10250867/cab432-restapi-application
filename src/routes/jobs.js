@@ -5,7 +5,6 @@ const fs = require('fs');
 const authMiddleware = require('../middleware/authmiddleware');
 const { createJob, updateJob, getJob, listJobs } = require('../store/jobs');
 const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo');
-//const { generateThumbnails } = require('../utils/thumbnails');
 const authHeaderOrQuery = require('../middleware/authHeaderOrQuery');
 
 const allowPublicReports = process.env.ALLOW_PUBLIC_REPORTS === 'true';
@@ -46,7 +45,6 @@ router.post('/transcode', authMiddleware, async (req, res) => {
 
     const outputMeta = await ffprobeJson(outputPath);
     const outputSha  = await sha256File(outputPath);
-    //const thumbs     = await generateThumbnails(outputPath, UPLOAD_DIR, `thumbs-${path.parse(filename).name}`, 3);
     const t1 = Date.now();
 
     updateJob(job.id, {
@@ -55,7 +53,6 @@ router.post('/transcode', authMiddleware, async (req, res) => {
       elapsedMs: t1 - t0,
       input:  { path: `/uploads/${filename}`,        sizeBytes: inputSize,  sha256: inputSha,  meta: inputMeta },
       outputs:[{ type: 'mp4', path: `/transcoded/${outputName}`, sizeBytes: outSizeNow, sha256: outputSha, meta: outputMeta }],
-      //thumbnails: thumbs
     });
   } catch (e) {
     updateJob(job.id, { status: 'failed', error: e.message, finishedAt: new Date().toISOString() });
