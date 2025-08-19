@@ -13,9 +13,14 @@ if (!fs.existsSync(JOBS_FILE)) {
 
 // Read all jobs from JSON file
 function read() {
-  return JSON.parse(fs.readFileSync(JOBS_FILE, 'utf8'));
+  try {
+    const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.warn('[WARN] Could not read jobs file:', err.message);
+    return [];
+  }
 }
-
 // Overwrite the jobs file
 function write(data) {
   fs.writeFileSync(JOBS_FILE, JSON.stringify(data, null, 2));

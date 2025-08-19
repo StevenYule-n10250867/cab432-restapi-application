@@ -2,7 +2,7 @@ const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 
-const SERVER = 'http://localhost:3000';
+const SERVER = 'http://3.26.163.135:3000';
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
 const ADMIN_CREDENTIALS = {
