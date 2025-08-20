@@ -76,31 +76,45 @@
 - **Relevant files:**
     - /loadtest.js
 
-## Additional criteria
+## Additional criteria (selected)
 
-### Extensive REST API features
+### Extended REST API features
 
-- **One line description**: Supports file uploads, JWT auth middleware, and OpenAPI docs via Swagger.
+- **One line description**: JWT-protected endpoints, RESTful design, OpenAPI schema, proper status codes and methods.
 - **Video timestamp:** 3:00
 - **Relevant files:**
     - /authmiddleware.js
     - /openapi.yaml
+    - /app.js
 
-### External API(s)
+### Additional types of data
 
-- **One line description**: Not attempted
-- **Video timestamp:** mm:ss
+- **One line description**: Original video uploads, transcoded outputs, job metadata (structured and unstructured).
+- **Video timestamp:** 3:20
 - **Relevant files:**
-    - N/A
-
-### Additional kinds of data
-
-- **One line description**: Not attempted
-- **Video timestamp:** mm:ss
-- **Relevant files:**
-    - N/A
+    - /uploads/
+    - /src/transcoded/
+    - /jobs.js
 
 ### Custom processing
+
+- **One line description**: Transcoding logic is controlled through custom-built Node.js orchestration using `ffmpeg` with configurable load test triggers.
+- **Video timestamp:** 3:40
+- **Relevant files:**
+    - /video.js
+    - /loadtest.js
+
+### Web client
+
+- **One line description**: Swagger UI client enables all major endpoint interactions via browser.
+- **Video timestamp:** 4:00
+- **Relevant files:**
+    - /app.js
+    - /openapi.yaml
+
+## Not Attempted
+
+### External APIs
 
 - **One line description**: Not attempted
 - **Video timestamp:** mm:ss
@@ -109,7 +123,7 @@
 
 ### Infrastructure as code
 
-- **One line description**: Not attempted (used manual Docker commands and AWS CLI).
+- **One line description**: Not attempted (manual Docker & AWS CLI used)
 - **Video timestamp:** mm:ss
 - **Relevant files:**
     - N/A
