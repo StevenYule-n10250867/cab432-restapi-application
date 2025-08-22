@@ -54,4 +54,3 @@ router.get('/files', authMiddleware, (req, res) => {
 });
 
 module.exports = router;
-

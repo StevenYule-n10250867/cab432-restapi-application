@@ -34,4 +34,3 @@ module.exports = {
   fileSizeBytes,
   sha256File
 };
-

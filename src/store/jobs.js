@@ -15,13 +15,23 @@ if (!fs.existsSync(JOBS_FILE)) {
 function read() {
   try {
     const raw = fs.readFileSync(JOBS_FILE, 'utf8');
-    return raw ? JSON.parse(raw) : [];
+    const parsed = JSON.parse(raw);
+
+    // Ensure it always returns { jobs: [] }
+    if (!parsed || !Array.isArray(parsed.jobs)) {
+      return { jobs: [] };
+    }
+
+    return parsed;
   } catch (err) {
     console.warn('[WARN] Could not read jobs file:', err.message);
-    return [];
+    return { jobs: [] };
   }
 }
-// Overwrite the jobs file
+
+
+
+//Overwrite the jobs file
 function write(data) {
   fs.writeFileSync(JOBS_FILE, JSON.stringify(data, null, 2));
 }
@@ -86,4 +96,3 @@ function cryptoRandomId() {
 }
 
 module.exports = { createJob, updateJob, getJob, listJobs };
-
