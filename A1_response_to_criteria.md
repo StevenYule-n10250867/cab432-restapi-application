@@ -63,7 +63,7 @@ docker pull 901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n10250867-my-repo:
 docker rm -f cab432-api
 docker run -d --name cab432-api \
   -p 3000:3000 \
-  -e JWT_SECRET='change-me' \
+  -e JWT_SECRET='supersecret' \
   -e ALLOW_PUBLIC_REPORTS='true' \
   -v "$PWD/uploads:/app/uploads" \
   -v "$PWD/src/transcoded:/app/src/transcoded" \
@@ -74,12 +74,10 @@ docker run -d --name cab432-api \
 - **Verification:**  
   Visit `http://<EC2_PUBLIC_DNS>:3000/health` → should return `{"status":"ok"}`.  
 
-- **Video timestamp:** 0:30  
-
 ### User login
 
 - **One line description:** JWT-based login using hardcoded credentials (admin/adminpass). Token is required for protected routes.  
-- **Video timestamp:** 0:45  
+- **Video timestamp:** 1:46  
 - **Relevant files:**
   - /auth.js  
   - /authmiddleware.js  
@@ -87,7 +85,7 @@ docker run -d --name cab432-api \
 ### REST API
 
 - **One line description:** REST API provides endpoints for auth, video uploads, transcoding, job tracking and status reporting.  
-- **Video timestamp:** 1:00  
+- **Video timestamp:** 1:38
 - **Relevant files:**
   - /app.js  
   - /video.js  
@@ -100,7 +98,7 @@ docker run -d --name cab432-api \
 - **One line description:** Uploaded video files for transcoding.  
 - **Type:** Unstructured  
 - **Rationale:** Binary video files are stored on disk in `/uploads` and `/src/transcoded`, and not in the database.  
-- **Video timestamp:** 1:20  
+- **Video timestamp:** 2:20 
 - **Relevant files:**
   - /uploads/  
   - /src/transcoded/  
@@ -109,22 +107,22 @@ docker run -d --name cab432-api \
 #### Second kind
 - **One line description:** JSON metadata for jobs, including status, filename, and output path.  
 - **Type:** Structured  
-- **Rationale:** Used to track job state and return meaningful progress updates to clients.  
-- **Video timestamp:** 1:40  
+- **Rationale:** Used to track job state and return meaningful progress updates to clients. Also provides video metadata for reports. 
+- **Video timestamp:** 2:30  
 - **Relevant files:**
   - /jobs.js  
 
 ### CPU intensive task
 
-- **One line description:** Video transcoding using `ffmpeg` triggered via POST to `/jobs/transcode`.  
-- **Video timestamp:** 2:00  
+- **One line description:** Video transcoding using `ffmpeg` triggered via POST to `/jobs/transcode`. Triggered directly via EC2 for video demonstration but also triggered via Swagger earlier in the video as a small example.  
+- **Video timestamp:** 4:05 
 - **Relevant files:**
   - /video.js  
 
 ### CPU load testing
 
 - **One line description:** Custom `loadtest.js` script sends repeated POST requests to `/jobs/transcode` using a large file.  
-- **Video timestamp:** 2:30  
+- **Video timestamp:** 3:48
 - **Relevant files:**
   - /loadtest.js  
 
@@ -135,7 +133,7 @@ docker run -d --name cab432-api \
 ### Extended REST API features
 
 - **One line description:** JWT-protected endpoints, RESTful design, OpenAPI schema, proper status codes and methods.  
-- **Video timestamp:** 3:00  
+- **Video timestamp:** 1:40, 2:45, 4:55 
 - **Relevant files:**
   - /authmiddleware.js  
   - /openapi.yaml  
@@ -143,8 +141,8 @@ docker run -d --name cab432-api \
 
 ### Additional types of data
 
-- **One line description:** Original video uploads, transcoded outputs, job metadata (structured and unstructured).  
-- **Video timestamp:** 3:20  
+- **One line description:** Original video uploads, transcoded outputs, job metadata (structured and unstructured). Stored in /data/jobs.json location and also utilising hardcoded HTML report. 
+- **Video timestamp:** 5:11  
 - **Relevant files:**
   - /uploads/  
   - /src/transcoded/  
@@ -188,3 +186,11 @@ docker run -d --name cab432-api \
 - **One line description:** Not attempted  
 - **Video timestamp:** mm:ss  
 - **Relevant files:** N/A  
+
+---
+
+### Considerations
+
+Please note that the `loadtest.js` script can be easily modified to run multiple smaller jobs concurrently. But for the purpose of the video demonstration, I used one larger video so I could easily show the generated report and show a clear upward usage of CPU resources.
+
+I understand that the requirement for Assignment 2 will likely be numerous smaller jobs being run concurrently, so just wanted to make this distinction in hopes that you won't penalise me for taking this approach.
