@@ -29,8 +29,6 @@ function read() {
   }
 }
 
-
-
 //Overwrite the jobs file
 function write(data) {
   fs.writeFileSync(JOBS_FILE, JSON.stringify(data, null, 2));

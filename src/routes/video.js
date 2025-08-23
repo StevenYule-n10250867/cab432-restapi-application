@@ -8,17 +8,24 @@ const authMiddleware = require('../middleware/authmiddleware');
 const router = express.Router();
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const upload = multer({ dest: UPLOAD_DIR });
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_DIR);
+  },
+  filename: (req, file, cb) => {
+    cb(null, file.originalname);
+  }
+});
+
+const upload = multer({ storage });
 
 // Upload a video file
 router.post('/upload', authMiddleware, upload.single('video'), (req, res) => {
   res.json({
     message: 'File uploaded',
-    filename: req.file.filename,
+    filename: req.file.originalname,
     originalname: req.file.originalname
   });
 });
