@@ -13,7 +13,7 @@ ALLOW_PUBLIC_REPORTS=true
 ```
 
 
-(This was added for the purpose of the demonstration. When set to true, it removes authentication from the /jobs/{id}/report route, allowing access to the web report via the local web browser. This would typically be disabled when in production)
+(ALLOW_PUBLIC_REPORTS was added for the purpose of the demonstration. When set to true, it removes authentication from the /jobs/{id}/report route, allowing access to the web report via the local web browser. This would typically be disabled when in production)
 
 
 ## Overview
