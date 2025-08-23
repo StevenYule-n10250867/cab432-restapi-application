@@ -44,18 +44,31 @@ ALLOW_PUBLIC_REPORTS=true
 - **Deployment steps on EC2:**
 
 ```bash
-# 1. Install Docker if not already
+# 1. Login as ubuntu user
+sudo -iu ubuntu 
+
+# 2. Navigate to project directory
+cd CAB432-RestAPI-Application-EC2
+
+# 3. Install Docker if not already
 sudo apt update && sudo apt install -y docker.io
 
-# 2. Login to ECR
+# 4. Login to ECR
 aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 901444280953.dkr.ecr.ap-southeast-2.amazonaws.com
 
-# 3. Pull image
+# 5. Pull image
 docker pull 901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n10250867-my-repo:latest
 
-# 4. Run container (with volume mounts for persistence)
+# 6. Run container (with volume mounts for persistence)
 docker rm -f cab432-api
-docker run -d --name cab432-api   -p 3000:3000   -e JWT_SECRET='change-me'   -e ALLOW_PUBLIC_REPORTS='true'   -v "$PWD/uploads:/app/uploads"   -v "$PWD/src/transcoded:/app/src/transcoded"   -v "$PWD/data:/app/data"   901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n10250867-my-repo:latest
+docker run -d --name cab432-api \
+  -p 3000:3000 \
+  -e JWT_SECRET='change-me' \
+  -e ALLOW_PUBLIC_REPORTS='true' \
+  -v "$PWD/uploads:/app/uploads" \
+  -v "$PWD/src/transcoded:/app/src/transcoded" \
+  -v "$PWD/data:/app/data" \
+  901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n10250867-my-repo:latest
 ```
 
 - **Verification:**  
@@ -152,6 +165,7 @@ docker run -d --name cab432-api   -p 3000:3000   -e JWT_SECRET='change-me'   -e 
 - **Relevant files:**
   - /app.js  
   - /openapi.yaml  
+  - /routes/jobs.js
 
 ---
 
