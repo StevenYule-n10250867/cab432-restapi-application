@@ -5,6 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const authMiddleware = require('../middleware/authmiddleware');
 
+const { uploadFile } = require('../utils/s3');
+
 const router = express.Router();
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
@@ -22,13 +24,22 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Upload a video file
-router.post('/upload', authMiddleware, upload.single('video'), (req, res) => {
-  res.json({
-    message: 'File uploaded',
-    filename: req.file.originalname,
-    originalname: req.file.originalname
-  });
+router.post('/upload', authMiddleware, upload.single('video'), async (req, res) => {
+  try {
+    // Upload local file to S3
+    const s3Path = await uploadFile(req.file.path, req.file.originalname);
+
+    res.json({
+      message: 'File uploaded to S3',
+      s3Path,
+      filename: req.file.originalname
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Upload to S3 failed', error: err.message });
+  }
 });
+
 
 // Transcode a video
 router.post('/transcode', authMiddleware, (req, res) => {
