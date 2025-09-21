@@ -4,7 +4,7 @@ const multer = require('multer');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const authMiddleware = require('../middleware/authmiddleware');
+const { authMiddleware } = require('../middleware/authmiddleware');
 
 const { uploadFile, getUploadUrl, getDownloadUrl } = require('../utils/s3');
 

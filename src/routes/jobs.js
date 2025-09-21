@@ -3,7 +3,7 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const authMiddleware = require('../middleware/authmiddleware');
+const { authMiddleware } = require('../middleware/authmiddleware');
 const authHeaderOrQuery = require('../middleware/authHeaderOrQuery');
 const { createJob, updateJobStatus, getJobById, listAllJobs } = require('../store/jobs');
 const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo');
