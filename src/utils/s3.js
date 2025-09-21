@@ -1,4 +1,6 @@
+// s3.js
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
 
@@ -27,4 +29,21 @@ async function downloadFile(key, localFilePath) {
   });
 }
 
-module.exports = { uploadFile, downloadFile };
+// pre-signed URL helpers
+async function getUploadUrl(key, expiresIn = 3600) {
+  const command = new PutObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET,
+    Key: key,
+  });
+  return await getSignedUrl(s3, command, { expiresIn });
+}
+
+async function getDownloadUrl(key, expiresIn = 3600) {
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET,
+    Key: key,
+  });
+  return await getSignedUrl(s3, command, { expiresIn });
+}
+
+module.exports = { uploadFile, downloadFile, getUploadUrl, getDownloadUrl };

@@ -1,3 +1,4 @@
+// video.js
 const express = require('express');
 const multer = require('multer');
 const { exec } = require('child_process');
@@ -5,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const authMiddleware = require('../middleware/authmiddleware');
 
-const { uploadFile } = require('../utils/s3');
+const { uploadFile, getUploadUrl, getDownloadUrl } = require('../utils/s3');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Upload a video file
+// Upload a video file (server-mediated, not presigned)
 router.post('/upload', authMiddleware, upload.single('video'), async (req, res) => {
   try {
     // Upload local file to S3
@@ -40,6 +41,33 @@ router.post('/upload', authMiddleware, upload.single('video'), async (req, res) 
   }
 });
 
+// Get presigned upload URL
+router.get('/upload-url', authMiddleware, async (req, res) => {
+  try {
+    const { filename } = req.query;
+    if (!filename) return res.status(400).json({ message: 'filename query param required' });
+
+    const url = await getUploadUrl(`uploads/${filename}`);
+    res.json({ uploadUrl: url });
+  } catch (err) {
+    console.error('Error generating upload URL:', err);
+    res.status(500).json({ message: 'Failed to generate upload URL' });
+  }
+});
+
+// Get presigned download URL
+router.get('/download-url', authMiddleware, async (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ message: 'key query param required' });
+
+    const url = await getDownloadUrl(key);
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error('Error generating download URL:', err);
+    res.status(500).json({ message: 'Failed to generate download URL' });
+  }
+});
 
 // Transcode a video
 router.post('/transcode', authMiddleware, (req, res) => {
