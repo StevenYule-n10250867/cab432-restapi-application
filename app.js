@@ -29,7 +29,7 @@ const { loadConfig } = require('./src/config'); // 👈 add this
   // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  // Optional debug route (safe – masks secret)
+  // Optional debug route (mask secret)
   app.get('/config', (req, res) => {
     res.json({
       AWS_REGION: process.env.AWS_REGION,
