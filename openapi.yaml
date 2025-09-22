@@ -5,7 +5,10 @@ info:
   description: REST API for video upload, jobs, and authentication using AWS Cognito + S3.
 
 servers:
+  - url: http://3.26.193.131:3000
+    description: Public EC2 server
   - url: http://localhost:3000
+    description: Local development
 
 components:
   securitySchemes:
@@ -101,9 +104,41 @@ paths:
         "200":
           description: Login successful
 
+  /video/upload:
+    post:
+      summary: Upload a video file (server-mediated)
+      description: Upload a file directly to the EC2 container (then pushed to S3).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                video:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  filename:
+                    type: string
+                  s3Path:
+                    type: string
+
   /video/upload-url:
     get:
       summary: Get pre-signed S3 upload URL
+      description: Returns a temporary signed URL to upload directly to S3.
       security:
         - bearerAuth: []
       parameters:
@@ -115,10 +150,18 @@ paths:
       responses:
         "200":
           description: Returns an S3 upload URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
 
   /video/download-url:
     get:
       summary: Get pre-signed S3 download URL
+      description: Returns a temporary signed URL to download a file from S3.
       security:
         - bearerAuth: []
       parameters:
@@ -127,9 +170,65 @@ paths:
           required: true
           schema:
             type: string
+            example: uploads/sample.mp4
       responses:
         "200":
           description: Returns an S3 download URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  downloadUrl:
+                    type: string
+
+  /video/transcode:
+    post:
+      summary: Transcode an uploaded video
+      description: Runs ffmpeg locally to transcode a file already uploaded.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename:
+                  type: string
+                  example: sample.mp4
+      responses:
+        "200":
+          description: Transcoding complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  output:
+                    type: string
+
+  /video/files:
+    get:
+      summary: List uploaded files
+      description: Lists all uploaded files present in the uploads directory.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: string
 
   /jobs:
     get:

@@ -1,4 +1,4 @@
-// video.js
+// src/routes/video.js
 const express = require('express');
 const multer = require('multer');
 const { exec } = require('child_process');
@@ -11,8 +11,10 @@ const { uploadFile, getUploadUrl, getDownloadUrl } = require('../utils/s3');
 const router = express.Router();
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
+
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+// --- Multer setup for direct uploads ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOAD_DIR);
@@ -21,27 +23,29 @@ const storage = multer.diskStorage({
     cb(null, file.originalname);
   }
 });
-
 const upload = multer({ storage });
 
-// Upload a video file (server-mediated, not presigned)
+// -----------------------------
+// Upload a video file (Swagger-friendly, EC2 + S3)
+// -----------------------------
 router.post('/upload', authMiddleware, upload.single('video'), async (req, res) => {
   try {
-    // Upload local file to S3
     const s3Path = await uploadFile(req.file.path, req.file.originalname);
 
     res.json({
-      message: 'File uploaded to S3',
-      s3Path,
-      filename: req.file.originalname
+      message: 'File uploaded successfully',
+      filename: req.file.originalname,
+      s3Path
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Upload to S3 failed', error: err.message });
+    console.error('Upload error:', err);
+    res.status(500).json({ message: 'Upload failed', error: err.message });
   }
 });
 
-// Get presigned upload URL
+// -----------------------------
+// Get pre-signed upload URL (direct to S3)
+// -----------------------------
 router.get('/upload-url', authMiddleware, async (req, res) => {
   try {
     const { filename } = req.query;
@@ -55,7 +59,9 @@ router.get('/upload-url', authMiddleware, async (req, res) => {
   }
 });
 
-// Get presigned download URL
+// -----------------------------
+// Get pre-signed download URL (direct from S3)
+// -----------------------------
 router.get('/download-url', authMiddleware, async (req, res) => {
   try {
     const { key } = req.query;
@@ -69,9 +75,13 @@ router.get('/download-url', authMiddleware, async (req, res) => {
   }
 });
 
-// Transcode a video
+// -----------------------------
+// Transcode a video (local EC2 -> ffmpeg)
+// -----------------------------
 router.post('/transcode', authMiddleware, (req, res) => {
   const { filename } = req.body;
+  if (!filename) return res.status(400).json({ message: 'filename is required' });
+
   const inputPath = path.join(UPLOAD_DIR, filename);
   const outputName = `transcoded-${filename}.mp4`;
   const outputPath = path.join(UPLOAD_DIR, outputName);
@@ -80,6 +90,7 @@ router.post('/transcode', authMiddleware, (req, res) => {
 
   exec(command, (err) => {
     if (err) {
+      console.error('FFmpeg error:', err);
       return res.status(500).json({
         message: 'Transcoding failed',
         error: err.message
@@ -93,10 +104,17 @@ router.post('/transcode', authMiddleware, (req, res) => {
   });
 });
 
+// -----------------------------
 // List all uploaded files
+// -----------------------------
 router.get('/files', authMiddleware, (req, res) => {
-  const files = fs.readdirSync(UPLOAD_DIR).sort();
-  res.json({ files });
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR).sort();
+    res.json({ files });
+  } catch (err) {
+    console.error('Error reading uploads directory:', err);
+    res.status(500).json({ message: 'Failed to list files' });
+  }
 });
 
 module.exports = router;
