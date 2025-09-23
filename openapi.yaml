@@ -5,7 +5,7 @@ info:
   description: REST API for video upload, jobs, and authentication using AWS Cognito + S3.
 
 servers:
-  - url: http://3.26.193.131:3000
+  - url: http://3.27.223.92:3000
     description: Public EC2 server
   - url: http://localhost:3000
     description: Local development
@@ -182,10 +182,10 @@ paths:
                   downloadUrl:
                     type: string
 
-  /video/transcode:
+  /jobs/transcode:
     post:
-      summary: Transcode an uploaded video
-      description: Runs ffmpeg locally to transcode a file already uploaded.
+      summary: Submit a transcode job
+      description: Downloads from S3, runs ffmpeg, uploads output to S3, stores metadata in DynamoDB.
       security:
         - bearerAuth: []
       requestBody:
@@ -198,66 +198,130 @@ paths:
                 filename:
                   type: string
                   example: sample.mp4
+              required: [filename]
       responses:
-        "200":
-          description: Transcoding complete
+        "202":
+          description: Job accepted
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
+                  jobId:
                     type: string
-                  output:
+                  status:
                     type: string
-
-  /video/files:
-    get:
-      summary: List uploaded files
-      description: Lists all uploaded files present in the uploads directory.
-      security:
-        - bearerAuth: []
-      responses:
         "200":
-          description: List of files
+          description: Example job record after completion
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  files:
+                  id:
+                    type: string
+                  owner:
+                    type: string
+                  filename:
+                    type: string
+                  status:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  finishedAt:
+                    type: string
+                    format: date-time
+                  elapsedMs:
+                    type: integer
+                  outputs:
                     type: array
                     items:
-                      type: string
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        s3Uri:
+                          type: string
+                          example: s3://bucket/transcoded/transcoded-sample.mp4
+                        downloadUrl:
+                          type: string
+                          example: https://presigned-url-to-video
+                        sizeBytes:
+                          type: integer
+                        sha256:
+                          type: string
+                        meta:
+                          type: object
+                          properties:
+                            format:
+                              type: object
+                            streams:
+                              type: array
 
   /jobs:
     get:
-      summary: List jobs
+      summary: List all jobs for the current user
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Returns job list
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    filename:
+                      type: string
+                    status:
+                      type: string
+                    createdAt:
+                      type: string
+                      format: date-time
 
-    post:
-      summary: Submit a job
+  /jobs/{id}:
+    get:
+      summary: Get job details
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                videoKey:
-                  type: string
-                preset:
-                  type: string
-              required: [videoKey, preset]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         "200":
-          description: Job submitted
+          description: Job details
+        "404":
+          description: Job not found
+
+  /jobs/{id}/report:
+    get:
+      summary: Get job report
+      description: Returns HTML or JSON report for a job.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json]
+      responses:
+        "200":
+          description: Job report (HTML or JSON)
 
   /admin/dashboard:
     get:

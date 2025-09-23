@@ -1,36 +1,32 @@
 // src/routes/video.js
 const express = require('express');
 const multer = require('multer');
-const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { authMiddleware } = require('../middleware/authmiddleware');
-
 const { uploadFile, getUploadUrl, getDownloadUrl } = require('../utils/s3');
 
 const router = express.Router();
 
+// Temp upload dir (just used before uploading to S3)
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
-
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// --- Multer setup for direct uploads ---
+// Multer setup for direct uploads (Swagger/file form POST)
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    cb(null, file.originalname);
-  }
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => cb(null, file.originalname)
 });
 const upload = multer({ storage });
 
 // -----------------------------
-// Upload a video file (Swagger-friendly, EC2 + S3)
+// Upload a video file (EC2 → S3)
 // -----------------------------
+
 router.post('/upload', authMiddleware, upload.single('video'), async (req, res) => {
   try {
-    const s3Path = await uploadFile(req.file.path, req.file.originalname);
+    const s3Key = `uploads/${req.file.originalname}`;
+    const s3Path = await uploadFile(req.file.path, s3Key);
 
     res.json({
       message: 'File uploaded successfully',
@@ -43,14 +39,15 @@ router.post('/upload', authMiddleware, upload.single('video'), async (req, res) 
   }
 });
 
-// -----------------------------
-// Get pre-signed upload URL (direct to S3)
+//-----------------------------
+//Get pre-signed upload URL (direct to S3)
 // -----------------------------
 router.get('/upload-url', authMiddleware, async (req, res) => {
   try {
     const { filename } = req.query;
-    if (!filename) return res.status(400).json({ message: 'filename query param required' });
-
+    if (!filename) {
+      return res.status(400).json({ message: 'filename query param required' });
+    }
     const url = await getUploadUrl(`uploads/${filename}`);
     res.json({ uploadUrl: url });
   } catch (err) {
@@ -65,55 +62,14 @@ router.get('/upload-url', authMiddleware, async (req, res) => {
 router.get('/download-url', authMiddleware, async (req, res) => {
   try {
     const { key } = req.query;
-    if (!key) return res.status(400).json({ message: 'key query param required' });
-
+    if (!key) {
+      return res.status(400).json({ message: 'key query param required' });
+    }
     const url = await getDownloadUrl(key);
     res.json({ downloadUrl: url });
   } catch (err) {
     console.error('Error generating download URL:', err);
     res.status(500).json({ message: 'Failed to generate download URL' });
-  }
-});
-
-// -----------------------------
-// Transcode a video (local EC2 -> ffmpeg)
-// -----------------------------
-router.post('/transcode', authMiddleware, (req, res) => {
-  const { filename } = req.body;
-  if (!filename) return res.status(400).json({ message: 'filename is required' });
-
-  const inputPath = path.join(UPLOAD_DIR, filename);
-  const outputName = `transcoded-${filename}.mp4`;
-  const outputPath = path.join(UPLOAD_DIR, outputName);
-
-  const command = `ffmpeg -i "${inputPath}" -vcodec libx264 -preset veryfast "${outputPath}"`;
-
-  exec(command, (err) => {
-    if (err) {
-      console.error('FFmpeg error:', err);
-      return res.status(500).json({
-        message: 'Transcoding failed',
-        error: err.message
-      });
-    }
-
-    res.json({
-      message: 'Transcoding complete',
-      output: outputName
-    });
-  });
-});
-
-// -----------------------------
-// List all uploaded files
-// -----------------------------
-router.get('/files', authMiddleware, (req, res) => {
-  try {
-    const files = fs.readdirSync(UPLOAD_DIR).sort();
-    res.json({ files });
-  } catch (err) {
-    console.error('Error reading uploads directory:', err);
-    res.status(500).json({ message: 'Failed to list files' });
   }
 });
 
