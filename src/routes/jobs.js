@@ -1,11 +1,8 @@
+// src/routes/jobs.js
 const express = require('express');
 const { exec } = require('child_process');
 const path = require('path');
-const fs = require('fs');
-
 const { authMiddleware } = require('../middleware/authmiddleware');
-const authHeaderOrQuery = require('../middleware/authHeaderOrQuery');
-//const { createJob, updateJobStatus, getJobById, listAllJobs } = require('../store/jobs');
 const { putJob, updateJob, getJob, listJobs } = require('../utils/dynamodb');
 const { v4: uuidv4 } = require('uuid');
 const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo');
@@ -15,11 +12,6 @@ const allowPublicReports = process.env.ALLOW_PUBLIC_REPORTS === 'true';
 const passThrough = (_req, _res, next) => next();
 
 const router = express.Router();
-const UPLOAD_DIR = path.join(__dirname, '../../uploads');
-const TRANSCODED_DIR = path.join(__dirname, '../transcoded');
-
-if (!fs.existsSync(TRANSCODED_DIR)) fs.mkdirSync(TRANSCODED_DIR, { recursive: true });
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // ----------------------------
 // POST /jobs/transcode
@@ -30,7 +22,7 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     return res.status(400).json({ message: 'filename is required' });
   }
 
-  const owner = req.user?.['cognito:username'] || req.user?.username || 'unknown';
+  const owner = req.user?.['cognito:username'] || 'unknown';
   const job = {
     id: uuidv4(),
     owner,
@@ -46,18 +38,30 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     const t0 = Date.now();
     await updateJob(job.id, { status: 'processing', startedAt: new Date().toISOString() });
 
+    // download input from S3
     const localInput = `/tmp/${filename}`;
-    await downloadFile(filename, localInput);
+    await downloadFile(`uploads/${filename}`, localInput);
 
     const baseName = path.parse(filename).name;
     const outputName = `transcoded-${baseName}.mp4`;
     const localOutput = `/tmp/${outputName}`;
 
+    // run ffmpeg
     const cmd = `ffmpeg -y -i "${localInput}" -vcodec libx264 -preset veryfast "${localOutput}"`;
     await new Promise((resolve, reject) => exec(cmd, err => (err ? reject(err) : resolve())));
 
+    // gather metadata
+    const sizeBytes = fileSizeBytes(localOutput);
+    const sha256 = await sha256File(localOutput);
+    const meta = await ffprobeJson(localOutput).catch(() => null);
+
+    // upload to S3
     const s3OutputKey = `transcoded/${outputName}`;
     await uploadFile(localOutput, s3OutputKey);
+
+    // generate presigned download URL
+    const { getDownloadUrl } = require('../utils/s3');
+    const downloadUrl = await getDownloadUrl(s3OutputKey);
 
     const t1 = Date.now();
     await updateJob(job.id, {
@@ -65,7 +69,14 @@ router.post('/transcode', authMiddleware, async (req, res) => {
       finishedAt: new Date().toISOString(),
       elapsedMs: t1 - t0,
       outputs: [
-        { type: 'mp4', path: `s3://${process.env.AWS_S3_BUCKET}/${s3OutputKey}` }
+        {
+          type: 'mp4',
+          s3Uri: `s3://${process.env.AWS_S3_BUCKET}/${s3OutputKey}`,
+          downloadUrl,
+          sizeBytes,
+          sha256,
+          meta
+        }
       ]
     });
   } catch (e) {
@@ -77,17 +88,19 @@ router.post('/transcode', authMiddleware, async (req, res) => {
   }
 });
 
-//----------------------------------------------------------------
 
-//-----------------------------------------------------------------
+//-----------------------------
+// GET /jobs/:id
+// ----------------------------
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const job = await getJob(req.params.id);
     if (!job) return res.sendStatus(404);
-    
-    const currentUser = req.user?.['cognito:username'] || req.user?.username;
 
-    if (job.owner !== currentUser && !(req.user['cognito:groups'] || []).includes('admin')) {
+    const currentUser = req.user?.['cognito:username'];
+    const groups = req.user['cognito:groups'] || [];
+
+    if (job.owner !== currentUser && !groups.includes('admin')) {
       return res.sendStatus(403);
     }
 
@@ -99,20 +112,25 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // ----------------------------
-// GET /jobs (list all jobs for user)
+// GET /jobs (list jobs for user)
 // ----------------------------
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const allJobs = await listJobs();
-    const filtered = allJobs.filter(j => 
-      j.owner === req.user?.username || req.user?.username === 'admin'
-    );
+    const currentUser = req.user?.['cognito:username'];
+    const groups = req.user['cognito:groups'] || [];
+
+    const filtered = groups.includes('admin')
+      ? allJobs
+      : allJobs.filter(j => j.owner === currentUser);
+
     res.json(filtered);
   } catch (err) {
     console.error('Error listing jobs:', err);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 
 // ----------------------------
 // GET /jobs/:id/report
@@ -122,10 +140,16 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, asy
     const job = await getJob(req.params.id);
     if (!job) return res.sendStatus(404);
 
-    if (!allowPublicReports) {
-      if (job.owner !== req.user?.username && req.user?.username !== 'admin') {
-        return res.sendStatus(403);
-      }
+    const currentUser = req.user?.['cognito:username'];
+    const groups = req.user?.['cognito:groups'] || [];
+
+    if (!allowPublicReports && job.owner !== currentUser && !groups.includes('admin')) {
+      return res.sendStatus(403);
+    }
+
+    // return JSON if ?format=json
+    if (req.query.format === 'json') {
+      return res.json(job);
     }
 
     const formatDateTime = (iso) => {
@@ -135,12 +159,18 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, asy
       return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
-    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-    const pretty = (obj) => esc(JSON.stringify(obj ?? (Array.isArray(obj) ? [] : {}), null, 2));
+    const esc = (s) =>
+      String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const pretty = (obj) => {
+      try {
+        return esc(JSON.stringify(obj ?? {}, null, 2));
+      } catch {
+        return '{}';
+      }
+    };
     const has = (v) => v !== undefined && v !== null;
 
-    const input = job.input || {};
-    const out = (job.outputs && job.outputs[0]) || {};
+    const out = (Array.isArray(job.outputs) && job.outputs[0]) || {};
 
     res.set('Content-Type', 'text/html').send(`<!doctype html>
 <html><head><meta charset="utf-8">
@@ -165,22 +195,23 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, asy
 <div class="section">
   <h2>Output</h2>
   <div class="grid">
-    <div>Path</div><div>${out.path ? `<a href="${esc(out.path)}">${esc(out.path)}</a>` : '-'}</div>
-    <div>Size</div><div>${esc(has(out.sizeBytes)?out.sizeBytes:'-')} bytes</div>
+    <div>Path</div><div>${out.s3Uri ? `<code>${esc(out.s3Uri)}</code>` : '-'}</div>
+    <div>Size</div><div>${has(out.sizeBytes) ? esc(out.sizeBytes) : '-'}</div>
     <div>SHA-256</div><div>${out.sha256 ? `<code>${esc(out.sha256)}</code>` : '-'}</div>
-    <div>Format</div><div><pre>${pretty(out.meta?.format)}</pre></div>
-    <div>Streams</div><div><pre>${pretty(out.meta?.streams)}</pre></div>
+    <div>Format</div><div><pre>${pretty(out.meta?.format || {})}</pre></div>
+    <div>Streams</div><div><pre>${pretty(out.meta?.streams || [])}</pre></div>
   </div>
 </div>
 
-${out.path ? `<div class="section"><h2>Preview</h2><video src="${esc(out.path)}" controls></video></div>` : ''}
+${out.downloadUrl ? `<div class="section"><h2>Preview</h2><video src="${esc(out.downloadUrl)}" controls></video></div>` : ''}
 
 <p class="section"><a href="/jobs/${esc(job.id)}/report?format=json">View as raw JSON</a></p>
 </body></html>`);
   } catch (err) {
-    console.error('Error generating report:', err);
+    console.error('Error generating report:', err, { jobId: req.params.id });
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 
 module.exports = router;
