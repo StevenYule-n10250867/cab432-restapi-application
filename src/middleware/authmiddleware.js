@@ -1,3 +1,4 @@
+// src/middleware/authmiddleware.js
 const jwt = require('jsonwebtoken');
 const jwkToPem = require('jwk-to-pem');
 const fetch = require('node-fetch');
@@ -18,6 +19,7 @@ async function getPems() {
   return pems;
 }
 
+// Standard authentication middleware
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.sendStatus(401);
@@ -42,4 +44,16 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-module.exports = authMiddleware;
+// Group enforcement helper
+function requireGroup(group) {
+  return (req, res, next) => {
+    if (!req.user) return res.sendStatus(401);
+    const groups = req.user['cognito:groups'] || [];
+    if (!groups.includes(group)) {
+      return res.status(403).json({ error: `${group} access required` });
+    }
+    next();
+  };
+}
+
+module.exports = { authMiddleware, requireGroup };

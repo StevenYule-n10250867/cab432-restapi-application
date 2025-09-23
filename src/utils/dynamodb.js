@@ -16,7 +16,7 @@ async function putJob(job) {
 async function getJob(id) {
   const result = await ddb.send(new GetCommand({
     TableName: tableName,
-    Key: { id }   // ✅ correct key name
+    Key: { id }
   }));
   return result.Item;
 }

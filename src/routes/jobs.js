@@ -3,9 +3,11 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const authMiddleware = require('../middleware/authmiddleware');
+const { authMiddleware } = require('../middleware/authmiddleware');
 const authHeaderOrQuery = require('../middleware/authHeaderOrQuery');
-const { createJob, updateJobStatus, getJobById, listAllJobs } = require('../store/jobs');
+//const { createJob, updateJobStatus, getJobById, listAllJobs } = require('../store/jobs');
+const { putJob, updateJob, getJob, listJobs } = require('../utils/dynamodb');
+const { v4: uuidv4 } = require('uuid');
 const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo');
 const { uploadFile, downloadFile } = require('../utils/s3');
 
@@ -28,14 +30,21 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     return res.status(400).json({ message: 'filename is required' });
   }
 
-  const owner = req.user?.username || 'unknown';
-  const job = await createJob({ owner, filename });
+  const owner = req.user?.['cognito:username'] || req.user?.username || 'unknown';
+  const job = {
+    id: uuidv4(),
+    owner,
+    filename,
+    status: 'queued',
+    createdAt: new Date().toISOString()
+  };
+  await putJob(job);
 
   res.status(202).set('Location', `/jobs/${job.id}`).json({ jobId: job.id, status: job.status });
 
   try {
     const t0 = Date.now();
-    await updateJobStatus(job.id, { status: 'processing', startedAt: new Date().toISOString() });
+    await updateJob(job.id, { status: 'processing', startedAt: new Date().toISOString() });
 
     const localInput = `/tmp/${filename}`;
     await downloadFile(filename, localInput);
@@ -51,7 +60,7 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     await uploadFile(localOutput, s3OutputKey);
 
     const t1 = Date.now();
-    await updateJobStatus(job.id, {
+    await updateJob(job.id, {
       status: 'done',
       finishedAt: new Date().toISOString(),
       elapsedMs: t1 - t0,
@@ -59,9 +68,8 @@ router.post('/transcode', authMiddleware, async (req, res) => {
         { type: 'mp4', path: `s3://${process.env.AWS_S3_BUCKET}/${s3OutputKey}` }
       ]
     });
-
   } catch (e) {
-    await updateJobStatus(job.id, {
+    await updateJob(job.id, {
       status: 'failed',
       error: e.message,
       finishedAt: new Date().toISOString()
@@ -69,16 +77,20 @@ router.post('/transcode', authMiddleware, async (req, res) => {
   }
 });
 
-// ----------------------------
-// GET /jobs/:id
-// ----------------------------
+//----------------------------------------------------------------
+
+//-----------------------------------------------------------------
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const job = await getJobById(req.params.id);
+    const job = await getJob(req.params.id);
     if (!job) return res.sendStatus(404);
-    if (job.owner !== req.user?.username && req.user?.username !== 'admin') {
+    
+    const currentUser = req.user?.['cognito:username'] || req.user?.username;
+
+    if (job.owner !== currentUser && !(req.user['cognito:groups'] || []).includes('admin')) {
       return res.sendStatus(403);
     }
+
     res.json(job);
   } catch (err) {
     console.error('Error fetching job by ID:', err);
@@ -91,7 +103,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // ----------------------------
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const allJobs = await listAllJobs();
+    const allJobs = await listJobs();
     const filtered = allJobs.filter(j => 
       j.owner === req.user?.username || req.user?.username === 'admin'
     );
@@ -107,7 +119,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // ----------------------------
 router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, async (req, res) => {
   try {
-    const job = await getJobById(req.params.id);
+    const job = await getJob(req.params.id);
     if (!job) return res.sendStatus(404);
 
     if (!allowPublicReports) {
