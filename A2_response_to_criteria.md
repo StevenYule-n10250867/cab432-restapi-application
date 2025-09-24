@@ -35,18 +35,7 @@ Overview
 - **Video timestamp:**  
 - **Relevant files:**  
   - src/utils/dynamodb.js  
-  - src/store/jobs.js  
   - src/routes/jobs.js  
-
-### Third data service
-
-- **AWS service name:**  
-- **What data is being stored?:**  
-- **Why is this service suited to this data?:**  
-- **Why are the other services used not suitable for this data?:**  
-- **Bucket/instance/table name:**  
-- **Video timestamp:**  
-- **Relevant files:**  
 
 ### S3 Pre-signed URLs
 
@@ -66,12 +55,14 @@ Overview
 
 ### Core - Statelessness
 
-- **What data is stored within your application that is not stored in cloud data services?:** Temporary transcoding files in `/tmp`.  
-- **Why is this data not considered persistent state?:** Temporary files can be recreated by rerunning the job; persistent state is always in S3/DynamoDB.  
-- **How does your application ensure data consistency if the app suddenly stops?:** All persistent data is stored in S3 and DynamoDB, so restarting the container/EC2 instance does not cause data loss. Jobs can be retrieved from DynamoDB.  
+- **What data is stored within your application that is not stored in cloud data services?:** Temporary files in `/tmp` during transcoding before being uploaded to S3.  
+- **Why is this data not considered persistent state?:** These files are intermediate and can be recreated by re-running the job. All true persistent data is stored in S3 and DynamoDB.  
+- **How does your application ensure data consistency if the app suddenly stops?:** Videos and job metadata are fully persisted in S3 and DynamoDB. If the EC2/container is restarted, previously uploaded videos and job records are still available, and the application continues to operate correctly. In-progress jobs may need to be resubmitted, but the persistent state remains consistent and intact.  
 - **Relevant files:**  
   - src/routes/jobs.js  
   - src/routes/video.js  
+  - src/utils/s3.js  
+  - src/utils/dynamodb.js  
 
 ### Graceful handling of persistent connections
 
@@ -81,8 +72,8 @@ Overview
 
 ### Core - Authentication with Cognito
 
-- **User pool name:** ap-southeast-2_pUeRdxIFW  
-- **How are authentication tokens handled by the client?:** JWT returned on login and passed via `Authorization: Bearer <token>` header to all protected routes.  
+- **User pool name:** ap-southeast-2_pUeRdxIFW (App Client ID: 4rrngtjump7gjqc90lg46m4jnl)  
+- **How are authentication tokens handled by the client?:** Users register and confirm via Cognito. On login, Cognito issues a JWT which the client includes in the `Authorization: Bearer <token>` header. The `authMiddleware` validates these tokens against Cognito’s JWKs, ensuring secure access to protected routes such as `/jobs`.  
 - **Video timestamp:**  
 - **Relevant files:**  
   - src/routes/auth.js  
@@ -110,8 +101,8 @@ Overview
 
 ### Core - DNS with Route53
 
-- **Subdomain:** n10250867.cab432.com → EC2 public DNS  
-- **Video timestamp:**  
+- **Subdomain:** n10250867.cab432.com  
+- **Video timestamp:**
 
 ### Parameter store
 
@@ -128,11 +119,14 @@ Overview
   - app.js
 
 
-### Secrets manager
+### Secrets Manager
 
-- **Secrets names:** Not implemented (falls back to `.env`).  
+- **Secrets names:** /n10250867/JWT_SECRET  
 - **Video timestamp:**  
-- **Relevant files:**  
+- **Relevant files:**
+  - app.js
+  - src/config.js  
+  - src/routes/auth.js
 
 ### Infrastructure as code
 
