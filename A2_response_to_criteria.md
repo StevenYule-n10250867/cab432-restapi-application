@@ -115,9 +115,18 @@ Overview
 
 ### Parameter store
 
-- **Parameter names:** Not implemented (falls back to `.env`).  
-- **Video timestamp:**  
-- **Relevant files:**  
+- **Parameter names:**
+  - /n10250867/AWS_REGION = ap-southeast-2
+  - /n10250867/AWS_S3_BUCKET = n10250867-a2-media-api
+  - /n10250867/COGNITO_CLIENT_ID = 4rrngtjump7gjqc90lg46m4jnl
+  - /n10250867/COGNITO_CLIENT_SECRET = hjk5dngq7uusequ06eic17c55k16uaj711hf0lg9slrrgnnqb9r
+  - /n10250867/COGNITO_USER_POOL_ID = ap-southeast-2_pUeRdxIFW
+  - /n10250867/JWT_SECRET = supersecret
+- **Video timestamp:**
+- **Relevant files:**
+  - src/config.js
+  - app.js
+
 
 ### Secrets manager
 
