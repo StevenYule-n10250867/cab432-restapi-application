@@ -180,7 +180,7 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, asy
   code,pre{background:#f6f8fa;padding:2px 6px;border-radius:4px}
   .grid{display:grid;grid-template-columns:220px 1fr;gap:8px 16px}
   .section{margin:20px 0}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;border:1px solid #ccd}
+  .pill{display:inline-block;padding:6px 12px;border-radius:999px;background:#eef;border:1px solid #ccd;text-decoration:none;color:#000}
   video{max-width:720px;width:100%;border:1px solid #ddd;border-radius:8px}
 </style>
 </head>
@@ -203,7 +203,15 @@ router.get('/:id/report', allowPublicReports ? passThrough : authMiddleware, asy
   </div>
 </div>
 
-${out.downloadUrl ? `<div class="section"><h2>Preview</h2><video src="${esc(out.downloadUrl)}" controls></video></div>` : ''}
+${out.downloadUrl ? `
+<div class="section">
+  <h2>Preview</h2>
+  <video src="${esc(out.downloadUrl)}" controls></video>
+</div>
+<div class="section">
+  <h2>Download</h2>
+  <a href="${esc(out.downloadUrl)}" download class="pill">⬇ Download Video</a>
+</div>` : ''}
 
 <p class="section"><a href="/jobs/${esc(job.id)}/report?format=json">View as raw JSON</a></p>
 </body></html>`);
@@ -212,6 +220,7 @@ ${out.downloadUrl ? `<div class="section"><h2>Preview</h2><video src="${esc(out.
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 
 
 module.exports = router;

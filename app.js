@@ -24,6 +24,7 @@ const { authMiddleware, requireGroup } = require('./src/middleware/authmiddlewar
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+  // Optional debug route (mask secret)
   app.get('/config', (req, res) => {
     res.json({
       AWS_REGION: process.env.AWS_REGION,
