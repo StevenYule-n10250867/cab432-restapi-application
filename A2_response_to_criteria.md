@@ -22,8 +22,12 @@ Overview
 - **Bucket/instance/table name:** n10250867-a2-media-api  
 - **Video timestamp:**  
 - **Relevant files:**  
-  - src/utils/s3.js  
-  - src/routes/video.js  
+  - src/utils/s3.js
+    - uploadFile (lines 7-15)
+    - getUploadURL / getDownloadURL (lines 27-36) 
+  - src/routes/video.js
+    - /video/upoad route (lines 18-34)
+    - /video/upload-url (lines 45-55)
 
 ### Core - Second data persistence service (IMPLEMENTED)
 
