@@ -13,7 +13,7 @@ Overview
 
 ------------------------------------------------
 
-### Core - First data persistence service
+### Core - First data persistence service (IMPLEMENTED)
 
 - **AWS service name:** S3  
 - **What data is being stored?:** Raw uploaded video files and transcoded output files.  
@@ -25,7 +25,7 @@ Overview
   - src/utils/s3.js  
   - src/routes/video.js  
 
-### Core - Second data persistence service
+### Core - Second data persistence service (IMPLEMENTED)
 
 - **AWS service name:** DynamoDB  
 - **What data is being stored?:** Metadata about transcoding jobs (job ID, owner, filename, status, timestamps, outputs, errors).  
@@ -35,9 +35,19 @@ Overview
 - **Video timestamp:**  
 - **Relevant files:**  
   - src/utils/dynamodb.js  
-  - src/routes/jobs.js  
+  - src/routes/jobs.js
+ 
+### Third data service (NOT IMPLEMENTED)
 
-### S3 Pre-signed URLs
+- **AWS service name:**  [eg. RDS]
+- **What data is being stored?:** [eg video metadata]
+- **Why is this service suited to this data?:** [eg. ]
+- **Why is are the other services used not suitable for this data?:** [eg. Advanced video search requires complex querries which are not available on S3 and inefficient on DynamoDB]
+- **Bucket/instance/table name:**
+- **Video timestamp:**
+- **Relevant files:**
+
+### S3 Pre-signed URLs (IMPLEMENTED)
 
 - **S3 Bucket names:** n10250867-a2-media-api  
 - **Video timestamp:**  
@@ -45,7 +55,7 @@ Overview
   - src/utils/s3.js  
   - src/routes/video.js  
 
-### In-memory cache
+### In-memory cache (NOT IMPLEMENTED)
 
 - **ElastiCache instance name:**  
 - **What data is being cached?:**  
@@ -53,7 +63,7 @@ Overview
 - **Video timestamp:**  
 - **Relevant files:**  
 
-### Core - Statelessness
+### Core - Statelessness (IMPLEMENTED)
 
 - **What data is stored within your application that is not stored in cloud data services?:** Temporary files in `/tmp` during transcoding before being uploaded to S3.  
 - **Why is this data not considered persistent state?:** These files are intermediate and can be recreated by re-running the job. All true persistent data is stored in S3 and DynamoDB.  
@@ -64,13 +74,13 @@ Overview
   - src/utils/s3.js  
   - src/utils/dynamodb.js  
 
-### Graceful handling of persistent connections
+### Graceful handling of persistent connections (NOT IMPLEMENTED)
 
 - **Type of persistent connection and use:** N/A (polling is used instead of persistent connections).  
 - **Method for handling lost connections:** N/A.  
 - **Relevant files:**  
 
-### Core - Authentication with Cognito
+### Core - Authentication with Cognito (IMPLEMENTED)
 
 - **User pool name:** ap-southeast-2_pUeRdxIFW (App Client ID: 4rrngtjump7gjqc90lg46m4jnl)  
 - **How are authentication tokens handled by the client?:** Users register and confirm via Cognito. On login, Cognito issues a JWT which the client includes in the `Authorization: Bearer <token>` header. The `authMiddleware` validates these tokens against Cognito’s JWKs, ensuring secure access to protected routes such as `/jobs`.  
@@ -79,19 +89,19 @@ Overview
   - src/routes/auth.js  
   - src/middleware/authmiddleware.js  
 
-### Cognito multi-factor authentication
+### Cognito multi-factor authentication (NOT IMPLEMENTED)
 
 - **What factors are used for authentication:** Not implemented  
 - **Video timestamp:**  
 - **Relevant files:**  
 
-### Cognito federated identities
+### Cognito federated identities (NOT IMPLEMENTED)
 
 - **Identity providers used:** Not implemented  
 - **Video timestamp:**  
 - **Relevant files:**  
 
-### Cognito groups
+### Cognito groups (IMPLEMENTED)
 
 - **How are groups used to set permissions?:** Admin group users can access admin-only routes (e.g., `/admin/dashboard`). Regular users cannot.  
 - **Video timestamp:**  
@@ -99,12 +109,12 @@ Overview
   - src/middleware/authmiddleware.js  
   - app.js  
 
-### Core - DNS with Route53
+### Core - DNS with Route53 (IMPLEMENTED)
 
 - **Subdomain:** n10250867.cab432.com  
 - **Video timestamp:**
 
-### Parameter store
+### Parameter store (IMPLEMENTED)
 
 - **Parameter names:**
   - /n10250867/AWS_REGION = ap-southeast-2
@@ -119,7 +129,7 @@ Overview
   - app.js
 
 
-### Secrets Manager
+### Secrets Manager (IMPLEMENTED)
 
 - **Secrets names:** /n10250867/JWT_SECRET  
 - **Video timestamp:**  
@@ -128,20 +138,20 @@ Overview
   - src/config.js  
   - src/routes/auth.js
 
-### Infrastructure as code
+### Infrastructure as code (NOT IMPLEMENTED)
 
 - **Technology used:** Not implemented (manual EC2 + Docker setup).  
 - **Services deployed:**  
 - **Video timestamp:**  
 - **Relevant files:**  
 
-### Other (with prior approval only)
+### Other (with prior approval only) (NOT IMPLEMENTED)
 
 - **Description:**  
 - **Video timestamp:**  
 - **Relevant files:**  
 
-### Other (with prior permission only)
+### Other (with prior permission only) (NOT IMPLEMENTED)
 
 - **Description:**  
 - **Video timestamp:**  
