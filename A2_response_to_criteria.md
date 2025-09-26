@@ -38,8 +38,12 @@ Overview
 - **Bucket/instance/table name:** JobsTable  
 - **Video timestamp:**  
 - **Relevant files:**  
-  - src/utils/dynamodb.js  
+  - src/utils/dynamodb.js
+    - putJob (lines 7–14)
+    - getJob (lines 16–21)
+    - updateJob (lines 23–41) 
   - src/routes/jobs.js
+    - /jobs/transcode route storing jobs (lines 19–95)
  
 ### Third data service (NOT IMPLEMENTED)
 
