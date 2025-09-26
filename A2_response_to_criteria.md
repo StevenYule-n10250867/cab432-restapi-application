@@ -60,8 +60,13 @@ Overview
 - **S3 Bucket names:** n10250867-a2-media-api  
 - **Video timestamp:**  
 - **Relevant files:**  
-  - src/utils/s3.js  
-  - src/routes/video.js  
+  - src/utils/s3.js
+    - getUploadUrl, getDownloadUrl (lines 27–36) 
+  - src/routes/video.js
+    - /video/upload-url (lines 45–55)
+    - /video/download-url (lines 59–69)
+  -  src/routes/jobs.js
+    -  playback/download (lines 197–203)
 
 ### In-memory cache (NOT IMPLEMENTED)
 
@@ -94,8 +99,12 @@ Overview
 - **How are authentication tokens handled by the client?:** Users register and confirm via Cognito. On login, Cognito issues a JWT which the client includes in the `Authorization: Bearer <token>` header. The `authMiddleware` validates these tokens against Cognito’s JWKs, ensuring secure access to protected routes such as `/jobs`.  
 - **Video timestamp:**  
 - **Relevant files:**  
-  - src/routes/auth.js  
-  - src/middleware/authmiddleware.js  
+  - src/routes/auth.js
+    - Register /auth/register (lines 17–34)
+    - Confirm /auth/confirm (lines 38–51)
+    - Login /auth/login (lines 55–71)   
+  - src/middleware/authmiddleware.js
+    -   JWT validation against Cognito JWKs (lines 17–40)
 
 ### Cognito multi-factor authentication (NOT IMPLEMENTED)
 
