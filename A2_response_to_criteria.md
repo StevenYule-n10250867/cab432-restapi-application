@@ -9,7 +9,7 @@ Overview
 - **Partner name (if applicable):** N/A  
 - **Application name:** Media Transcoder API  
 - **Two line description:** This application allows users to upload video files, transcode them into MP4 using ffmpeg, and track job status with reports. It integrates AWS S3 for object storage, DynamoDB for metadata, and Cognito for authentication.  
-- **EC2 instance name or ID:** [insert EC2 instance name/ID here]  
+- **EC2 instance name or ID:** n10250867-Assessment2-Ubuntu
 
 ------------------------------------------------
 
