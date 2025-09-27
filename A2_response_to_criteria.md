@@ -20,7 +20,7 @@ Overview
 - **Why is this service suited to this data?:** S3 is ideal for large binary objects like videos. It provides durable, scalable, and cost-effective storage with easy retrieval.  
 - **Why are the other services used not suitable for this data?:** DynamoDB is optimised for structured metadata, not large blobs. EC2 instance storage is ephemeral and not designed for persistence.  
 - **Bucket/instance/table name:** n10250867-a2-media-api  
-- **Video timestamp:**  
+- **Video timestamp:**  0:12 - 0:40
 - **Relevant files:**  
   - src/utils/s3.js
     - uploadFile (lines 7-15)
@@ -36,7 +36,7 @@ Overview
 - **Why is this service suited to this data?:** DynamoDB is highly available and efficient for key-value lookups and storing JSON-like objects, making it perfect for lightweight job tracking.  
 - **Why are the other services used not suitable for this data?:** S3 is not efficient for querying structured metadata, and RDS would be overkill for simple job state tracking.  
 - **Bucket/instance/table name:** JobsTable  
-- **Video timestamp:**  
+- **Video timestamp:**  6:13 - 6:57
 - **Relevant files:**  
   - src/utils/dynamodb.js
     - putJob (lines 7–14)
@@ -58,7 +58,7 @@ Overview
 ### S3 Pre-signed URLs (IMPLEMENTED)
 
 - **S3 Bucket names:** n10250867-a2-media-api  
-- **Video timestamp:**  
+- **Video timestamp:**  5:50 - 6:12
 - **Relevant files:**  
   - src/utils/s3.js
     - getUploadUrl, getDownloadUrl (lines 27–36) 
@@ -97,7 +97,7 @@ Overview
 
 - **User pool name:** ap-southeast-2_pUeRdxIFW (App Client ID: 4rrngtjump7gjqc90lg46m4jnl)  
 - **How are authentication tokens handled by the client?:** Users register and confirm via Cognito. On login, Cognito issues a JWT which the client includes in the `Authorization: Bearer <token>` header. The `authMiddleware` validates these tokens against Cognito’s JWKs, ensuring secure access to protected routes such as `/jobs`.  
-- **Video timestamp:**  
+- **Video timestamp:**  0:42 - 2:45
 - **Relevant files:**  
   - src/routes/auth.js
     - Register /auth/register (lines 17–34)
@@ -121,15 +121,15 @@ Overview
 ### Cognito groups (IMPLEMENTED)
 
 - **How are groups used to set permissions?:** Admin group users can access admin-only routes (e.g., `/admin/dashboard`). Regular users cannot.  
-- **Video timestamp:**  
+- **Video timestamp:**  2:47 - 3:19
 - **Relevant files:**  
-  - src/middleware/authmiddleware.js  
-  - app.js  
+  - src/middleware/authmiddleware.js  (lines 42-51)
+  - app.js  (lines 36-44)
 
 ### Core - DNS with Route53 (IMPLEMENTED)
 
 - **Subdomain:** n10250867.cab432.com  
-- **Video timestamp:**
+- **Video timestamp:** 0:00 - 0:34
 
 ### Parameter store (IMPLEMENTED)
 
@@ -140,20 +140,25 @@ Overview
   - /n10250867/COGNITO_CLIENT_SECRET = hjk5dngq7uusequ06eic17c55k16uaj711hf0lg9slrrgnnqb9r
   - /n10250867/COGNITO_USER_POOL_ID = ap-southeast-2_pUeRdxIFW
   - /n10250867/JWT_SECRET = supersecret
-- **Video timestamp:**
+- **Video timestamp:** 6:57 - 7:22
 - **Relevant files:**
   - src/config.js
+    - getParam (lines 7–16)
+    - loadConfig (lines 36–67)
   - app.js
+    - loadConfig (lines 7–10)
 
 
 ### Secrets Manager (IMPLEMENTED)
 
 - **Secrets names:** /n10250867/JWT_SECRET  
-- **Video timestamp:**  
+- **Video timestamp:**  7:22 - 7:41
 - **Relevant files:**
-  - app.js
-  - src/config.js  
-  - src/routes/auth.js
+  - app.js (lines 27–33)
+  - src/config.js
+    - getSecret (lines 18–25)
+    - loadConfig (lines 36–67)
+  - src/routes/auth.js (lines 55–71)
 
 ### Infrastructure as code (NOT IMPLEMENTED)
 
