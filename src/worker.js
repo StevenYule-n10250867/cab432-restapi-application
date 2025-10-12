@@ -1,4 +1,5 @@
 const { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } = require("@aws-sdk/client-sqs");
+const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
 const { downloadFile, uploadFile } = require("./utils/s3");
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
@@ -10,6 +11,14 @@ const REGION = "ap-southeast-2";
 const QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n10250867-media-transcode-queue";
 
 const sqs = new SQSClient({ region: REGION });
+const ssm = new SSMClient({ region: REGION });
+
+// Helper: load bucket name from Parameter Store
+async function getBucketName() {
+  const cmd = new GetParameterCommand({ Name: "/n10250867/AWS_S3_BUCKET" });
+  const res = await ssm.send(cmd);
+  return res.Parameter.Value;
+}
 
 // --- ffmpeg helper ---
 function runFfmpeg(input, output) {
@@ -47,6 +56,7 @@ async function handle(msg) {
     const meta = await ffprobeJson(localOutput).catch(() => null);
 
     // Upload result
+    const bucketName = await getBucketName();
     const s3OutputKey = `transcoded/${outputName}`;
     await uploadFile(localOutput, s3OutputKey);
 
@@ -59,13 +69,14 @@ async function handle(msg) {
       outputs: [
         {
           type: "mp4",
-          s3Uri: `s3://${process.env.AWS_S3_BUCKET}/${s3OutputKey}`,
+          s3Uri: `s3://${bucketName}/${s3OutputKey}`,
           sizeBytes,
           sha256,
           meta,
         },
       ],
     });
+
 
     console.log(`Job ${jobId} completed successfully`);
   } catch (err) {
