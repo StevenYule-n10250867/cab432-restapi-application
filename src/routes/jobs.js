@@ -17,8 +17,17 @@ const router = express.Router();
 // POST /jobs/transcode
 // ----------------------------
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
+const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
+
 const sqs = new SQSClient({ region: process.env.AWS_REGION });
-const QUEUE_URL = process.env.SQS_QUEUE_URL;
+const ssm = new SSMClient({ region: process.env.AWS_REGION });
+
+// helper function to load queue URL from SSM
+async function getQueueUrl() {
+  const cmd = new GetParameterCommand({ Name: "/n10250867/SQS_QUEUE_URL" });
+  const res = await ssm.send(cmd);
+  return res.Parameter.Value;
+}
 
 router.post('/transcode', authMiddleware, async (req, res) => {
   const { filename } = req.body;
@@ -38,6 +47,8 @@ router.post('/transcode', authMiddleware, async (req, res) => {
 
   // Send message to SQS for worker microservice
   try {
+    const QUEUE_URL = await getQueueUrl();
+
     const messageBody = JSON.stringify({
       jobId: job.id,
       filename,
@@ -66,7 +77,6 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     const t0 = Date.now();
     await updateJob(job.id, { status: 'processing', startedAt: new Date().toISOString() });
 
-    // download input from S3
     const localInput = `/tmp/${filename}`;
     await downloadFile(`uploads/${filename}`, localInput);
 
@@ -74,20 +84,16 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     const outputName = `transcoded-${baseName}.mp4`;
     const localOutput = `/tmp/${outputName}`;
 
-    // run ffmpeg
     const cmd = `ffmpeg -y -i "${localInput}" -vcodec libx264 -preset veryfast "${localOutput}"`;
     await new Promise((resolve, reject) => exec(cmd, err => (err ? reject(err) : resolve())));
 
-    // gather metadata
     const sizeBytes = fileSizeBytes(localOutput);
     const sha256 = await sha256File(localOutput);
     const meta = await ffprobeJson(localOutput).catch(() => null);
 
-    // upload to S3
     const s3OutputKey = `transcoded/${outputName}`;
     await uploadFile(localOutput, s3OutputKey);
 
-    // generate presigned download URL
     const { getDownloadUrl } = require('../utils/s3');
     const downloadUrl = await getDownloadUrl(s3OutputKey);
 
