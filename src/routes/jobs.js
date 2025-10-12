@@ -16,6 +16,10 @@ const router = express.Router();
 // ----------------------------
 // POST /jobs/transcode
 // ----------------------------
+const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
+const sqs = new SQSClient({ region: process.env.AWS_REGION });
+const QUEUE_URL = process.env.SQS_QUEUE_URL;
+
 router.post('/transcode', authMiddleware, async (req, res) => {
   const { filename } = req.body;
   if (!filename) {
@@ -32,8 +36,32 @@ router.post('/transcode', authMiddleware, async (req, res) => {
   };
   await putJob(job);
 
-  res.status(202).set('Location', `/jobs/${job.id}`).json({ jobId: job.id, status: job.status });
+  // Send message to SQS for worker microservice
+  try {
+    const messageBody = JSON.stringify({
+      jobId: job.id,
+      filename,
+      owner
+    });
 
+    const command = new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: messageBody,
+    });
+
+    await sqs.send(command);
+    console.log(`Queued job ${job.id} for ${filename}`);
+  } catch (err) {
+    console.error("Failed to send SQS message:", err);
+    // Continue with local processing if SQS send fails
+  }
+
+  // Respond immediately to API client
+  res.status(202)
+     .set('Location', `/jobs/${job.id}`)
+     .json({ jobId: job.id, status: job.status });
+
+  // Original inline processing (kept for fallback/demo)
   try {
     const t0 = Date.now();
     await updateJob(job.id, { status: 'processing', startedAt: new Date().toISOString() });
@@ -80,6 +108,7 @@ router.post('/transcode', authMiddleware, async (req, res) => {
       ]
     });
   } catch (e) {
+    console.error("Transcode error:", e);
     await updateJob(job.id, {
       status: 'failed',
       error: e.message,
@@ -87,6 +116,7 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     });
   }
 });
+
 
 
 //-----------------------------
