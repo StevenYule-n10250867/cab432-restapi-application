@@ -11,14 +11,6 @@ const REGION = "ap-southeast-2";
 const QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n10250867-media-transcode-queue";
 
 const sqs = new SQSClient({ region: REGION });
-const ssm = new SSMClient({ region: REGION });
-
-// Helper: load bucket name from Parameter Store
-async function getBucketName() {
-  const cmd = new GetParameterCommand({ Name: "/n10250867/AWS_S3_BUCKET" });
-  const res = await ssm.send(cmd);
-  return res.Parameter.Value;
-}
 
 // --- ffmpeg helper ---
 function runFfmpeg(input, output) {
