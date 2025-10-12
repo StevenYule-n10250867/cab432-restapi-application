@@ -1,5 +1,9 @@
 const { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } = require("@aws-sdk/client-sqs");
-const { execSync } = require("child_process");
+const { downloadFile, uploadFile } = require("./utils/s3");
+const { updateJob } = require("./utils/dynamodb");
+const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
+const { exec } = require("child_process");
+const path = require("path");
 const fs = require("fs");
 
 const REGION = "ap-southeast-2";
@@ -7,18 +11,82 @@ const QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n102508
 
 const sqs = new SQSClient({ region: REGION });
 
+// --- ffmpeg helper ---
+function runFfmpeg(input, output) {
+  return new Promise((resolve, reject) => {
+    const cmd = `ffmpeg -y -i "${input}" -vcodec libx264 -preset veryfast "${output}"`;
+    exec(cmd, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
 async function handle(msg) {
   const body = JSON.parse(msg.Body);
-  console.log(`Processing job ${body.jobId} for file ${body.filename}`);
+  const { jobId, filename, owner } = body;
+
+  console.log(`Processing job ${jobId} for ${filename}`);
+
   try {
-    execSync("sleep 5"); // fake transcoding delay
-    console.log(`Job ${body.jobId} complete`);
+    const startedAt = new Date().toISOString();
+    await updateJob(jobId, { status: "processing", startedAt });
+
+    const localInput = `/tmp/${filename}`;
+    const baseName = path.parse(filename).name;
+    const outputName = `transcoded-${baseName}.mp4`;
+    const localOutput = `/tmp/${outputName}`;
+
+    // Download input file
+    await downloadFile(`uploads/${filename}`, localInput);
+
+    // Transcode video
+    const t0 = Date.now();
+    await runFfmpeg(localInput, localOutput);
+
+    // Collect metadata
+    const sizeBytes = fileSizeBytes(localOutput);
+    const sha256 = await sha256File(localOutput);
+    const meta = await ffprobeJson(localOutput).catch(() => null);
+
+    // Upload result
+    const s3OutputKey = `transcoded/${outputName}`;
+    await uploadFile(localOutput, s3OutputKey);
+
+    // Update DynamoDB
+    const elapsedMs = Date.now() - t0;
+    await updateJob(jobId, {
+      status: "done",
+      finishedAt: new Date().toISOString(),
+      elapsedMs,
+      outputs: [
+        {
+          type: "mp4",
+          s3Uri: `s3://${process.env.AWS_S3_BUCKET}/${s3OutputKey}`,
+          sizeBytes,
+          sha256,
+          meta,
+        },
+      ],
+    });
+
+    console.log(`Job ${jobId} completed successfully`);
   } catch (err) {
-    console.error(err);
+    console.error(`Job ${body.jobId} failed:`, err.message);
+    await updateJob(body.jobId, {
+      status: "failed",
+      error: err.message,
+      finishedAt: new Date().toISOString(),
+    });
+  } finally {
+    // Clean up temp files
+    try {
+      if (fs.existsSync(`/tmp/${filename}`)) fs.unlinkSync(`/tmp/${filename}`);
+      if (fs.existsSync(`/tmp/transcoded-${path.parse(filename).name}.mp4`))
+        fs.unlinkSync(`/tmp/transcoded-${path.parse(filename).name}.mp4`);
+    } catch (_) {}
   }
 }
 
 async function poll() {
+  console.log("Worker started. Listening for new SQS messages...");
   while (true) {
     try {
       const res = await sqs.send(
@@ -29,14 +97,13 @@ async function poll() {
         })
       );
 
-      if (res.Messages && res.Messages.length > 0) {
-        const m = res.Messages[0];
-        await handle(m);
-
+      if (res.Messages?.length) {
+        const msg = res.Messages[0];
+        await handle(msg);
         await sqs.send(
           new DeleteMessageCommand({
             QueueUrl: QUEUE_URL,
-            ReceiptHandle: m.ReceiptHandle,
+            ReceiptHandle: msg.ReceiptHandle,
           })
         );
       }

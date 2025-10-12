@@ -22,37 +22,36 @@ const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
 const sqs = new SQSClient({ region: process.env.AWS_REGION });
 const ssm = new SSMClient({ region: process.env.AWS_REGION });
 
-// helper function to load queue URL from SSM
+// Helper: get queue URL from Parameter Store
 async function getQueueUrl() {
   const cmd = new GetParameterCommand({ Name: "/n10250867/SQS_QUEUE_URL" });
   const res = await ssm.send(cmd);
   return res.Parameter.Value;
 }
 
-router.post('/transcode', authMiddleware, async (req, res) => {
+router.post("/transcode", authMiddleware, async (req, res) => {
   const { filename } = req.body;
   if (!filename) {
-    return res.status(400).json({ message: 'filename is required' });
+    return res.status(400).json({ message: "filename is required" });
   }
 
-  const owner = req.user?.['cognito:username'] || 'unknown';
+  const owner = req.user?.["cognito:username"] || "unknown";
   const job = {
     id: uuidv4(),
     owner,
     filename,
-    status: 'queued',
-    createdAt: new Date().toISOString()
+    status: "queued",
+    createdAt: new Date().toISOString(),
   };
   await putJob(job);
 
-  // Send message to SQS for worker microservice
   try {
     const QUEUE_URL = await getQueueUrl();
 
     const messageBody = JSON.stringify({
       jobId: job.id,
       filename,
-      owner
+      owner,
     });
 
     const command = new SendMessageCommand({
@@ -64,65 +63,15 @@ router.post('/transcode', authMiddleware, async (req, res) => {
     console.log(`Queued job ${job.id} for ${filename}`);
   } catch (err) {
     console.error("Failed to send SQS message:", err);
-    // Continue with local processing if SQS send fails
   }
 
-  // Respond immediately to API client
+  // Respond immediately – no more local processing here
   res.status(202)
-     .set('Location', `/jobs/${job.id}`)
-     .json({ jobId: job.id, status: job.status });
+    .set("Location", `/jobs/${job.id}`)
+    .json({ jobId: job.id, status: job.status });
 
-  // Original inline processing (kept for fallback/demo)
-  try {
-    const t0 = Date.now();
-    await updateJob(job.id, { status: 'processing', startedAt: new Date().toISOString() });
-
-    const localInput = `/tmp/${filename}`;
-    await downloadFile(`uploads/${filename}`, localInput);
-
-    const baseName = path.parse(filename).name;
-    const outputName = `transcoded-${baseName}.mp4`;
-    const localOutput = `/tmp/${outputName}`;
-
-    const cmd = `ffmpeg -y -i "${localInput}" -vcodec libx264 -preset veryfast "${localOutput}"`;
-    await new Promise((resolve, reject) => exec(cmd, err => (err ? reject(err) : resolve())));
-
-    const sizeBytes = fileSizeBytes(localOutput);
-    const sha256 = await sha256File(localOutput);
-    const meta = await ffprobeJson(localOutput).catch(() => null);
-
-    const s3OutputKey = `transcoded/${outputName}`;
-    await uploadFile(localOutput, s3OutputKey);
-
-    const { getDownloadUrl } = require('../utils/s3');
-    const downloadUrl = await getDownloadUrl(s3OutputKey);
-
-    const t1 = Date.now();
-    await updateJob(job.id, {
-      status: 'done',
-      finishedAt: new Date().toISOString(),
-      elapsedMs: t1 - t0,
-      outputs: [
-        {
-          type: 'mp4',
-          s3Uri: `s3://${process.env.AWS_S3_BUCKET}/${s3OutputKey}`,
-          downloadUrl,
-          sizeBytes,
-          sha256,
-          meta
-        }
-      ]
-    });
-  } catch (e) {
-    console.error("Transcode error:", e);
-    await updateJob(job.id, {
-      status: 'failed',
-      error: e.message,
-      finishedAt: new Date().toISOString()
-    });
-  }
+  // NOTE: ffmpeg transcoding has been moved to the worker microservice.
 });
-
 
 
 //-----------------------------
