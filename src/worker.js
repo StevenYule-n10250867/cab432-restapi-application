@@ -1,8 +1,8 @@
 const { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } = require("@aws-sdk/client-sqs");
-const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
 const { downloadFile, uploadFile } = require("./utils/s3");
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
+const { loadConfig } = require("./config");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -35,6 +35,10 @@ async function handle(msg) {
   console.log(`Processing job ${jobId} for ${filename}`);
 
   try {
+    // Load configuration (includes S3 bucket name from Parameter Store)
+    const config = await loadConfig();
+    const bucketName = config.AWS_S3_BUCKET;
+
     const startedAt = new Date().toISOString();
     await updateJob(jobId, { status: "processing", startedAt });
 
@@ -43,8 +47,8 @@ async function handle(msg) {
     const outputName = `transcoded-${baseName}.mp4`;
     const localOutput = `/tmp/${outputName}`;
 
-    // Download input file
-    await downloadFile(`uploads/${filename}`, localInput);
+    // Download input file from S3
+    await downloadFile(`uploads/${filename}`, localInput, bucketName);
 
     // Transcode video
     const t0 = Date.now();
@@ -56,9 +60,9 @@ async function handle(msg) {
     const meta = await ffprobeJson(localOutput).catch(() => null);
 
     // Upload result
-    const bucketName = await getBucketName();
     const s3OutputKey = `transcoded/${outputName}`;
-    await uploadFile(localOutput, s3OutputKey);
+    await uploadFile(localOutput, s3OutputKey, bucketName);
+
 
     // Update DynamoDB
     const elapsedMs = Date.now() - t0;
