@@ -73,6 +73,54 @@ router.post("/transcode", authMiddleware, async (req, res) => {
   // NOTE: ffmpeg transcoding has been moved to the worker microservice.
 });
 
+// ----------------------------
+// POST /test/load
+// ----------------------------
+
+router.post("/test/load", authMiddleware, async (req, res) => {
+  const { filename, count } = req.body;
+
+  if (!filename || !count || count < 1) {
+    return res.status(400).json({ message: "filename and count are required" });
+  }
+
+  const owner = req.user?.["cognito:username"] || "unknown";
+  const QUEUE_URL = await getQueueUrl();
+
+  const jobs = [];
+
+  for (let i = 0; i < count; i++) {
+    const jobId = uuidv4();
+    const job = {
+      id: jobId,
+      owner,
+      filename,
+      status: "queued",
+      createdAt: new Date().toISOString(),
+    };
+
+    await putJob(job); // add to DynamoDB
+
+    const messageBody = JSON.stringify({
+      jobId,
+      filename,
+      owner,
+    });
+
+    const command = new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: messageBody,
+    });
+
+    await sqs.send(command);
+    jobs.push(jobId);
+  }
+
+  res.status(202).json({
+    message: `Queued ${count} jobs for ${filename}`,
+    jobIds: jobs,
+  });
+});
 
 //-----------------------------
 // GET /jobs/:id

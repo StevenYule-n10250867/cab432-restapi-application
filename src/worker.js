@@ -65,6 +65,11 @@ async function handle(msg) {
     await uploadFile(localOutput, s3OutputKey, bucketName);
 
     const t1 = Date.now();
+
+    // generate presigned download URL
+    const { getDownloadUrl } = require("./utils/s3");
+    const downloadUrl = await getDownloadUrl(s3OutputKey);
+
     await updateJob(jobId, {
       status: "done",
       finishedAt: new Date().toISOString(),
@@ -73,6 +78,7 @@ async function handle(msg) {
         {
           type: "mp4",
           s3Uri: `s3://${bucketName}/${s3OutputKey}`,
+          downloadUrl,
           sizeBytes,
           sha256,
           meta,

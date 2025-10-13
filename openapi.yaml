@@ -259,6 +259,41 @@ paths:
                             streams:
                               type: array
 
+  /test/load:
+    post:
+      summary: Queue multiple transcoding jobs (load test)
+      description: Useful for testing Auto Scaling by submitting many jobs for the same file.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename:
+                  type: string
+                  example: sample.mp4
+                count:
+                  type: integer
+                  example: 5
+              required: [filename, count]
+      responses:
+        "202":
+          description: Jobs accepted and queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  jobIds:
+                    type: array
+                    items:
+                      type: string
+
   /jobs:
     get:
       summary: List all jobs for the current user
