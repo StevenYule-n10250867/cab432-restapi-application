@@ -259,10 +259,14 @@ paths:
                             streams:
                               type: array
 
-  /load:
+  /jobs/load:
     post:
-      summary: Queue multiple transcoding jobs (load test)
-      description: Useful for testing Auto Scaling by submitting many jobs for the same file.
+      summary: Queue multiple transcode jobs for autoscaling test
+      description: >
+        Enqueues multiple jobs to the SQS queue to simulate load and test
+        the autoscaling mechanism. Requires admin authorization.
+      tags:
+        - Jobs
       security:
         - bearerAuth: []
       requestBody:
@@ -274,14 +278,16 @@ paths:
               properties:
                 filename:
                   type: string
-                  example: sample.mp4
+                  example: sample-30s.mp4
                 count:
                   type: integer
                   example: 5
-              required: [filename, count]
+              required:
+                - filename
+                - count
       responses:
-        "202":
-          description: Jobs accepted and queued
+        '202':
+          description: Jobs queued successfully
           content:
             application/json:
               schema:
@@ -289,10 +295,17 @@ paths:
                 properties:
                   message:
                     type: string
+                    example: Queued 5 jobs for sample-30s.mp4
                   jobIds:
                     type: array
                     items:
                       type: string
+                      example: 4e2e2b4c-72a7-4b1e-bc69-3e1f776f943c
+        '400':
+          description: Invalid input (missing filename or count)
+        '401':
+          description: Unauthorized – valid token required
+
 
   /jobs:
     get:
