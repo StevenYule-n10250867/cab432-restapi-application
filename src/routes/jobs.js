@@ -77,7 +77,7 @@ router.post("/transcode", authMiddleware, async (req, res) => {
 // POST /test/load
 // ----------------------------
 
-router.post("/test/load", authMiddleware, async (req, res) => {
+router.post("/load", authMiddleware, async (req, res) => {
   const { filename, count } = req.body;
 
   if (!filename || !count || count < 1) {

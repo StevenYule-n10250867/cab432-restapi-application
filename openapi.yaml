@@ -259,7 +259,7 @@ paths:
                             streams:
                               type: array
 
-  /test/load:
+  /load:
     post:
       summary: Queue multiple transcoding jobs (load test)
       description: Useful for testing Auto Scaling by submitting many jobs for the same file.

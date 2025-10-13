@@ -43,6 +43,7 @@ const { authMiddleware, requireGroup } = require('./src/middleware/authmiddlewar
   app.use('/auth', authRoutes);
   app.use('/video', videoRoutes);
   app.use('/jobs', jobsRoutes);
+  app.use('/test', jobsRoutes);
 
   //  admin-only demo route
   app.get('/admin/dashboard', authMiddleware, requireGroup('admin'), (req, res) => {
