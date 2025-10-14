@@ -78,8 +78,17 @@ async function getBucketName() {
 // --- ffmpeg helper ---
 function runFfmpeg(input, output) {
   return new Promise((resolve, reject) => {
-    const cmd = `ffmpeg -y -i "${input}" -vcodec libx264 -preset veryfast "${output}"`;
-    exec(cmd, (err) => (err ? reject(err) : resolve()));
+    // Use slower preset and add scaling filter to increase CPU load
+    const cmd = `ffmpeg -y -i "${input}" -vf "scale=1280:720,format=yuv420p" -vcodec libx264 -preset slower -crf 22 "${output}"`;
+    console.log(`Running FFmpeg command: ${cmd}`);
+    exec(cmd, (err, stdout, stderr) => {
+      if (err) {
+        console.error("FFmpeg error:", stderr);
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
   });
 }
 
