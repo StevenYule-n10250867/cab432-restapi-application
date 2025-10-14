@@ -6,6 +6,26 @@ const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const https = require("https");
+
+// Fetch instance ID for logging
+async function getInstanceId() {
+  return new Promise((resolve) => {
+    https
+      .get("http://169.254.169.254/latest/meta-data/instance-id", (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => resolve(data.trim() || "unknown-instance"));
+      })
+      .on("error", () => resolve("unknown-instance"));
+  });
+}
+
+let instanceId = "unknown-instance";
+getInstanceId().then((id) => {
+  instanceId = id;
+  console.log(`[${instanceId}] Worker initialized`);
+});
 
 const REGION = "ap-southeast-2";
 const sqs = new SQSClient({ region: REGION });
@@ -36,12 +56,12 @@ async function handle(msg) {
   const body = JSON.parse(msg.Body);
   const { jobId, filename, owner } = body;
 
-  console.log(`Processing job ${jobId} for ${filename}`);
+  console.log(`[${instanceId}] Processing job ${jobId} for ${filename}`);
 
   try {
     const bucketName = await getBucketName();
     const startedAt = new Date().toISOString();
-    await updateJob(jobId, { status: "processing", startedAt });
+    await updateJob(jobId, { status: "processing", startedAt, workerInstance: instanceId });
 
     const localInput = `/tmp/${filename}`;
     const baseName = path.parse(filename).name;
@@ -74,6 +94,7 @@ async function handle(msg) {
       status: "done",
       finishedAt: new Date().toISOString(),
       elapsedMs: t1 - t0,
+      workerInstance: instanceId,
       outputs: [
         {
           type: "mp4",
@@ -86,13 +107,14 @@ async function handle(msg) {
       ],
     });
 
-    console.log(`Job ${jobId} completed successfully`);
+    console.log(`[${instanceId}] Job ${jobId} completed successfully`);
   } catch (err) {
-    console.error(`Job ${body.jobId} failed:`, err.message);
+    console.error(`[${instanceId}] Job ${body.jobId} failed:`, err.message);
     await updateJob(body.jobId, {
       status: "failed",
       error: err.message,
       finishedAt: new Date().toISOString(),
+      workerInstance: instanceId,
     });
   } finally {
     try {
@@ -105,7 +127,7 @@ async function handle(msg) {
 
 async function poll() {
   const queueUrl = await getQueueUrl();
-  console.log(`Worker started. Listening for new SQS messages on ${queueUrl}...`);
+  console.log(`[${instanceId}] Worker started. Listening for new SQS messages on ${queueUrl}...`);
 
   while (true) {
     try {
@@ -128,9 +150,9 @@ async function poll() {
         );
       }
     } catch (err) {
-      console.error("Polling error:", err);
+      console.error(`[${instanceId}] Polling error:`, err);
     }
   }
 }
 
-poll().catch(console.error);
+poll().catch((err) => console.error(`[${instanceId}] Worker crashed:`, err));
