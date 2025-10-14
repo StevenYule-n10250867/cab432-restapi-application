@@ -6,7 +6,7 @@ const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const https = require("https");
+const https = require("http");
 
 // Fetch instance ID for logging
 async function getInstanceId() {
