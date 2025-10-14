@@ -6,20 +6,51 @@ const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const https = require("http");
+const http = require("http");
 
-// Fetch instance ID for logging
+// Fetch instance ID for logging (IMDSv2 compatible)
 async function getInstanceId() {
   return new Promise((resolve) => {
-    https
-      .get("http://169.254.169.254/latest/meta-data/instance-id", (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => resolve(data.trim() || "unknown-instance"));
-      })
-      .on("error", () => resolve("unknown-instance"));
+    // Get IMDSv2 token
+    const tokenReq = http.request(
+      {
+        host: "169.254.169.254",
+        path: "/latest/api/token",
+        method: "PUT",
+        headers: { "X-aws-ec2-metadata-token-ttl-seconds": "60" },
+        timeout: 1000,
+      },
+      (tokenRes) => {
+        let token = "";
+        tokenRes.on("data", (chunk) => (token += chunk));
+        tokenRes.on("end", () => {
+          if (!token) return resolve("unknown-instance");
+
+          // Use the token to get the instance ID
+          const idReq = http.request(
+            {
+              host: "169.254.169.254",
+              path: "/latest/meta-data/instance-id",
+              method: "GET",
+              headers: { "X-aws-ec2-metadata-token": token },
+              timeout: 1000,
+            },
+            (idRes) => {
+              let id = "";
+              idRes.on("data", (chunk) => (id += chunk));
+              idRes.on("end", () => resolve(id.trim() || "unknown-instance"));
+            }
+          );
+          idReq.on("error", () => resolve("unknown-instance"));
+          idReq.end();
+        });
+      }
+    );
+    tokenReq.on("error", () => resolve("unknown-instance"));
+    tokenReq.end();
   });
 }
+
 
 let instanceId = "unknown-instance";
 getInstanceId().then((id) => {
