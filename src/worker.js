@@ -30,8 +30,8 @@ http.createServer(async (req, res) => {
     res.writeHead(200);
     res.end("OK");
   }
-}).listen(3000, () => {
-  console.log(`[${instanceId}] Worker ready on port 3000`);
+}).listen(80, () => {
+  console.log(`[${instanceId}] Worker ready on port 80`);
 });
 
 // Fetch instance IDs (for logs)

@@ -1,128 +1,88 @@
-const fs = require('fs');
-const fetch = require('node-fetch');
+const fetch = require("node-fetch");
+const { performance } = require("perf_hooks");
 
-const SERVER = 'http://localhost:3000';
-const VIDEO_FILENAME = 'bbb_sunflower_1080p_60fps_normal.mp4';
-const REPEAT_COUNT = 1;
-const POLL_INTERVAL = 5000;
+const endpoint = "http://n10250867-cab432-worker-alb.ap-southeast-2.elb.amazonaws.com/transcode";
+const numberOfRequests = 6;
+const targetResponseTime = 1800;
+const targetTimeHysteresis = 1.2;
+const minTargetConcurrentRequests = 2;
+const maxTargetConcurrentRequests = 8;
+const rollingAveragePastWeight = 0.95;
+const scaleoutTime = 10000;
 
-const ADMIN_CREDENTIALS = {
-  username: 'admin',
-  password: 'adminpass'
-};
+const rollingAverageCurrentWeight = 1 - rollingAveragePastWeight;
+let currentRequests = 0;
+let targetConcurrentRequests = minTargetConcurrentRequests;
+let rollingAverage = targetResponseTime;
+let lastScaleoutTime = performance.now();
 
-// Get current CPU usage
-function getCPUUsage() {
-  const stat = fs.readFileSync('/proc/stat', 'utf8');
-  const cpuLine = stat.split('\n')[0];
-  const parts = cpuLine.trim().split(/\s+/).slice(1).map(Number);
-
-  const idle = parts[3];
-  const total = parts.reduce((acc, val) => acc + val, 0);
-
-  return { idle, total };
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Sleep helper
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+function makeRequest(requestNumber) {
+  currentRequests += 1;
+  return new Promise((res) => {
+    const startTime = performance.now();
 
-// Authenticate and retrieve JWT token
-async function getToken() {
-  const res = await fetch(`${SERVER}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(ADMIN_CREDENTIALS)
-  });
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: "sample-30s.mp4"
+      })
+    })
+      .then((res) => {
+        const responseTime = performance.now() - startTime;
+        rollingAverage =
+          rollingAverage * rollingAveragePastWeight +
+          responseTime * rollingAverageCurrentWeight;
 
-  if (!res.ok) throw new Error(`Login failed: ${res.statusText}`);
-  const data = await res.json();
-  return data.token;
-}
+        console.log(
+          `Request ${requestNumber} completed in ${responseTime.toFixed(
+            2
+          )}ms | rolling avg: ${rollingAverage.toFixed(2)}ms`
+        );
 
-// Submit a transcode job and monitor until completion
-async function sendTranscodeAndMonitor(token, filename, index) {
-  const startTime = Date.now();
-  let prevCPU = getCPUUsage();
-
-  try {
-    const res = await fetch(`${SERVER}/jobs/transcode`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ filename })
-    });
-
-    const text = await res.text();
-    let body;
-
-    try {
-      body = JSON.parse(text);
-    } catch (err) {
-      console.error(`[${index + 1}]  Failed to parse /jobs/transcode response:\n${text}`);
-      return;
-    }
-
-    if (!res.ok) {
-      throw new Error(body.message || 'Unknown error');
-    }
-
-    const jobId = body.jobId;
-    const jobUrl = `${SERVER}/jobs/${jobId}`;
-    console.log(`[${index + 1}] Submitted job → ${jobUrl}`);
-
-    let status = 'pending';
-
-    while (status !== 'completed' && status !== 'failed') {
-      await wait(POLL_INTERVAL);
-
-      // CPU % calculation
-      const currCPU = getCPUUsage();
-      const idleDelta = currCPU.idle - prevCPU.idle;
-      const totalDelta = currCPU.total - prevCPU.total;
-      const usage = totalDelta > 0 ? 100 - (idleDelta / totalDelta * 100) : 0;
-      prevCPU = currCPU;
-
-      // Poll job status
-      const pollRes = await fetch(jobUrl, {
-        headers: { Authorization: `Bearer ${token}` }
+        if (performance.now() > scaleoutTime + lastScaleoutTime) {
+          if (
+            currentRequests <= targetConcurrentRequests &&
+            rollingAverage > targetResponseTime * targetTimeHysteresis
+          ) {
+            targetConcurrentRequests = Math.max(
+              minTargetConcurrentRequests,
+              targetConcurrentRequests - 1
+            );
+            lastScaleoutTime = performance.now();
+          } else if (
+            currentRequests >= targetConcurrentRequests &&
+            rollingAverage < targetResponseTime / targetTimeHysteresis
+          ) {
+            targetConcurrentRequests = Math.min(
+              maxTargetConcurrentRequests,
+              targetConcurrentRequests + 1
+            );
+            lastScaleoutTime = performance.now();
+          }
+        }
+      })
+      .catch((err) => {
+        console.error(`Request ${requestNumber} failed:`, err.message);
+      })
+      .finally(() => {
+        currentRequests -= 1;
+        res();
       });
+  });
+}
 
-      const jobText = await pollRes.text();
-      let job;
-      try {
-        job = JSON.parse(jobText);
-      } catch (err) {
-        console.error(`[${index + 1}]  Failed to parse job status response:\n${jobText}`);
-        break;
-      }
-
-      status = job.status;
-      const timestamp = new Date().toISOString();
-      console.log(`[${index + 1}] ${timestamp} | CPU: ${usage.toFixed(1)}% used | Job status: ${status}`);
+async function loadTest() {
+  for (let i = 0; i < numberOfRequests; i++) {
+    makeRequest(i);
+    while (currentRequests >= targetConcurrentRequests) {
+      await sleep(10);
     }
-
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[${index + 1}] Job ${status} in ${duration}s`);
-
-  } catch (err) {
-    console.error(`[${index + 1}] Failed:`, err.message);
   }
 }
 
-// === ENTRY POINT ===
-(async () => {
-  console.log(`[${new Date().toISOString()}] === Load test started ===`);
-  const token = await getToken();
-
-  const tasks = [];
-  for (let i = 0; i < REPEAT_COUNT; i++) {
-    tasks.push(sendTranscodeAndMonitor(token, VIDEO_FILENAME, i));
-  }
-
-  await Promise.all(tasks);
-  console.log(`[${new Date().toISOString()}] === Load test finished ===`);
-})();
+loadTest();
