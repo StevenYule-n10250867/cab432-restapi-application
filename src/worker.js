@@ -1,6 +1,4 @@
-const { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } = require("@aws-sdk/client-sqs");
-const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
-const { downloadFile, uploadFile } = require("./utils/s3");
+const { downloadFile, uploadFile, getDownloadUrl } = require("./utils/s3");
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
@@ -8,16 +6,37 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 
-// Health check server for ALB
-http.createServer((_, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("OK");
-}).listen(4000);
+// Health check + HTTP job server
+http.createServer(async (req, res) => {
+  if (req.method === "POST" && req.url === "/transcode") {
+    let body = "";
+    req.on("data", chunk => body += chunk);
+    req.on("end", async () => {
+      try {
+        const { jobId, filename, bucketName, owner } = JSON.parse(body);
+        console.log(`[${instanceId}] Received job ${jobId} for ${filename}`);
+        await handle({
+          Body: JSON.stringify({ jobId, filename, owner, bucketName })
+        });
+        res.writeHead(200);
+        res.end("OK");
+      } catch (err) {
+        console.error(`[${instanceId}] Failed to process job:`, err.message);
+        res.writeHead(500);
+        res.end("Error");
+      }
+    });
+  } else {
+    res.writeHead(200);
+    res.end("OK");
+  }
+}).listen(4000, () => {
+  console.log(`[${instanceId}] Worker ready on port 4000`);
+});
 
-// Fetch instance ID for logging (IMDSv2 compatible)
+// Fetch instance ID (for logs)
 async function getInstanceId() {
   return new Promise((resolve) => {
-    // Get IMDSv2 token
     const tokenReq = http.request(
       {
         host: "169.254.169.254",
@@ -28,11 +47,9 @@ async function getInstanceId() {
       },
       (tokenRes) => {
         let token = "";
-        tokenRes.on("data", (chunk) => (token += chunk));
+        tokenRes.on("data", chunk => token += chunk);
         tokenRes.on("end", () => {
           if (!token) return resolve("unknown-instance");
-
-          // Use the token to get the instance ID
           const idReq = http.request(
             {
               host: "169.254.169.254",
@@ -43,7 +60,7 @@ async function getInstanceId() {
             },
             (idRes) => {
               let id = "";
-              idRes.on("data", (chunk) => (id += chunk));
+              idRes.on("data", chunk => id += chunk);
               idRes.on("end", () => resolve(id.trim() || "unknown-instance"));
             }
           );
@@ -57,39 +74,20 @@ async function getInstanceId() {
   });
 }
 
-
 let instanceId = "unknown-instance";
 getInstanceId().then((id) => {
   instanceId = id;
   console.log(`[${instanceId}] Worker initialized`);
 });
 
-const REGION = "ap-southeast-2";
-const sqs = new SQSClient({ region: REGION });
-const ssm = new SSMClient({ region: REGION });
-
-// --- helpers to get parameters from SSM ---
-async function getQueueUrl() {
-  const cmd = new GetParameterCommand({ Name: "/n10250867/SQS_QUEUE_URL" });
-  const res = await ssm.send(cmd);
-  return res.Parameter.Value;
-}
-
-async function getBucketName() {
-  const cmd = new GetParameterCommand({ Name: "/n10250867/AWS_S3_BUCKET" });
-  const res = await ssm.send(cmd);
-  return res.Parameter.Value;
-}
-
-// --- ffmpeg helper ---
+// FFMPEG wrapper
 function runFfmpeg(input, output) {
   return new Promise((resolve, reject) => {
-    // Use slower preset and add scaling filter to increase CPU load
     const cmd = `ffmpeg -y -i "${input}" -vf "scale=1280:720,format=yuv420p" -vcodec libx264 -preset slower -crf 22 "${output}"`;
-    console.log(`Running FFmpeg command: ${cmd}`);
+    console.log(`[${instanceId}] Running FFmpeg: ${cmd}`);
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
-        console.error("FFmpeg error:", stderr);
+        console.error(`[${instanceId}] FFmpeg error:`, stderr);
         reject(err);
       } else {
         resolve();
@@ -98,14 +96,12 @@ function runFfmpeg(input, output) {
   });
 }
 
+// Job handler
 async function handle(msg) {
   const body = JSON.parse(msg.Body);
-  const { jobId, filename, owner } = body;
-
-  console.log(`[${instanceId}] Processing job ${jobId} for ${filename}`);
+  const { jobId, filename, owner, bucketName } = body;
 
   try {
-    const bucketName = await getBucketName();
     const startedAt = new Date().toISOString();
     await updateJob(jobId, { status: "processing", startedAt, workerInstance: instanceId });
 
@@ -114,27 +110,18 @@ async function handle(msg) {
     const outputName = `transcoded-${baseName}.mp4`;
     const localOutput = `/tmp/${outputName}`;
 
-    // Download input from S3
     await downloadFile(`uploads/${filename}`, localInput, bucketName);
-
-    // Transcode
     const t0 = Date.now();
     await runFfmpeg(localInput, localOutput);
 
-    // Metadata
     const sizeBytes = fileSizeBytes(localOutput);
     const sha256 = await sha256File(localOutput);
     const meta = await ffprobeJson(localOutput).catch(() => null);
 
-    // Upload output
     const s3OutputKey = `transcoded/${outputName}`;
     await uploadFile(localOutput, s3OutputKey, bucketName);
-
-    const t1 = Date.now();
-
-    // generate presigned download URL
-    const { getDownloadUrl } = require("./utils/s3");
     const downloadUrl = await getDownloadUrl(s3OutputKey);
+    const t1 = Date.now();
 
     await updateJob(jobId, {
       status: "done",
@@ -153,7 +140,7 @@ async function handle(msg) {
       ],
     });
 
-    console.log(`[${instanceId}] Job ${jobId} completed successfully`);
+    console.log(`[${instanceId}] Job ${jobId} complete`);
   } catch (err) {
     console.error(`[${instanceId}] Job ${body.jobId} failed:`, err.message);
     await updateJob(body.jobId, {
@@ -170,35 +157,3 @@ async function handle(msg) {
     } catch (_) {}
   }
 }
-
-async function poll() {
-  const queueUrl = await getQueueUrl();
-  console.log(`[${instanceId}] Worker started. Listening for new SQS messages on ${queueUrl}...`);
-
-  while (true) {
-    try {
-      const res = await sqs.send(
-        new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: 1,
-          WaitTimeSeconds: 20,
-        })
-      );
-
-      if (res.Messages?.length) {
-        const msg = res.Messages[0];
-        await handle(msg);
-        await sqs.send(
-          new DeleteMessageCommand({
-            QueueUrl: queueUrl,
-            ReceiptHandle: msg.ReceiptHandle,
-          })
-        );
-      }
-    } catch (err) {
-      console.error(`[${instanceId}] Polling error:`, err);
-    }
-  }
-}
-
-poll().catch((err) => console.error(`[${instanceId}] Worker crashed:`, err));
