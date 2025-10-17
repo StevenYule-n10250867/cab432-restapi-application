@@ -30,11 +30,11 @@ http.createServer(async (req, res) => {
     res.writeHead(200);
     res.end("OK");
   }
-}).listen(4000, () => {
-  console.log(`[${instanceId}] Worker ready on port 4000`);
+}).listen(3000, () => {
+  console.log(`[${instanceId}] Worker ready on port 3000`);
 });
 
-// Fetch instance ID (for logs)
+// Fetch instance IDs (for logs)
 async function getInstanceId() {
   return new Promise((resolve) => {
     const tokenReq = http.request(
