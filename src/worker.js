@@ -8,6 +8,13 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 
+// Health check server for ALB
+const http = require("http");
+http.createServer((_, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("OK");
+}).listen(3000);
+
 // Fetch instance ID for logging (IMDSv2 compatible)
 async function getInstanceId() {
   return new Promise((resolve) => {
