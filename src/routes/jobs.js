@@ -16,18 +16,8 @@ const router = express.Router();
 // ----------------------------
 // POST /jobs/transcode
 // ----------------------------
-const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
 
-const sqs = new SQSClient({ region: process.env.AWS_REGION });
-const ssm = new SSMClient({ region: process.env.AWS_REGION });
-
-// Helper: get queue URL from Parameter Store
-async function getQueueUrl() {
-  const cmd = new GetParameterCommand({ Name: "/n10250867/SQS_QUEUE_URL" });
-  const res = await ssm.send(cmd);
-  return res.Parameter.Value;
-}
+const fetch = require("node-fetch");
 
 router.post("/transcode", authMiddleware, async (req, res) => {
   const { filename } = req.body;
@@ -43,35 +33,38 @@ router.post("/transcode", authMiddleware, async (req, res) => {
     status: "queued",
     createdAt: new Date().toISOString(),
   };
+
   await putJob(job);
 
+  // Direct call to worker ALB
   try {
-    const QUEUE_URL = await getQueueUrl();
-
-    const messageBody = JSON.stringify({
-      jobId: job.id,
-      filename,
-      owner,
+    const response = await fetch("http://n10250867-cab432-worker-alb.ap-southeast-2.elb.amazonaws.com/transcode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jobId: job.id,
+        filename: filename,
+        bucketName: "n10250867-assessment3-bucket",
+        owner: owner,
+      }),
     });
 
-    const command = new SendMessageCommand({
-      QueueUrl: QUEUE_URL,
-      MessageBody: messageBody,
-    });
+    if (!response.ok) {
+      console.error("Worker rejected job:", await response.text());
+      return res.status(500).json({ message: "Worker rejected job" });
+    }
 
-    await sqs.send(command);
-    console.log(`Queued job ${job.id} for ${filename}`);
+    console.log(`Dispatched job ${job.id} to worker via ALB`);
   } catch (err) {
-    console.error("Failed to send SQS message:", err);
+    console.error("Failed to dispatch job to worker:", err.message);
+    return res.status(500).json({ message: "Failed to dispatch job to worker" });
   }
 
-  // Respond immediately – no more local processing here
   res.status(202)
     .set("Location", `/jobs/${job.id}`)
     .json({ jobId: job.id, status: job.status });
-
-  // NOTE: ffmpeg transcoding has been moved to the worker microservice.
 });
+
 
 // ----------------------------
 // POST /test/load

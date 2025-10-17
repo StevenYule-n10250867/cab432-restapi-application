@@ -6,36 +6,10 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 
-// Health check + HTTP job server
-http.createServer(async (req, res) => {
-  if (req.method === "POST" && req.url === "/transcode") {
-    let body = "";
-    req.on("data", chunk => body += chunk);
-    req.on("end", async () => {
-      try {
-        const { jobId, filename, bucketName, owner } = JSON.parse(body);
-        console.log(`[${instanceId}] Received job ${jobId} for ${filename}`);
-        await handle({
-          Body: JSON.stringify({ jobId, filename, owner, bucketName })
-        });
-        res.writeHead(200);
-        res.end("OK");
-      } catch (err) {
-        console.error(`[${instanceId}] Failed to process job:`, err.message);
-        res.writeHead(500);
-        res.end("Error");
-      }
-    });
-  } else {
-    res.writeHead(200);
-    res.end("OK");
-  }
-}).listen(80, () => {
-  console.log(`[${instanceId}] Worker ready on port 80`);
-});
+let instanceId = "unknown-instance";
 
-// Fetch instance IDs (for logs)
-async function getInstanceId() {
+// Get EC2 instance ID (IMDSv2)
+function getInstanceId() {
   return new Promise((resolve) => {
     const tokenReq = http.request(
       {
@@ -47,9 +21,10 @@ async function getInstanceId() {
       },
       (tokenRes) => {
         let token = "";
-        tokenRes.on("data", chunk => token += chunk);
+        tokenRes.on("data", (chunk) => (token += chunk));
         tokenRes.on("end", () => {
           if (!token) return resolve("unknown-instance");
+
           const idReq = http.request(
             {
               host: "169.254.169.254",
@@ -60,7 +35,7 @@ async function getInstanceId() {
             },
             (idRes) => {
               let id = "";
-              idRes.on("data", chunk => id += chunk);
+              idRes.on("data", (chunk) => (id += chunk));
               idRes.on("end", () => resolve(id.trim() || "unknown-instance"));
             }
           );
@@ -74,54 +49,46 @@ async function getInstanceId() {
   });
 }
 
-let instanceId = "unknown-instance";
-getInstanceId().then((id) => {
-  instanceId = id;
-  console.log(`[${instanceId}] Worker initialized`);
-});
-
-// FFMPEG wrapper
+// FFmpeg command wrapper
 function runFfmpeg(input, output) {
   return new Promise((resolve, reject) => {
     const cmd = `ffmpeg -y -i "${input}" -vf "scale=1280:720,format=yuv420p" -vcodec libx264 -preset slower -crf 22 "${output}"`;
-    console.log(`[${instanceId}] Running FFmpeg: ${cmd}`);
+    console.log(`[${instanceId}] Running ffmpeg...`);
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
-        console.error(`[${instanceId}] FFmpeg error:`, stderr);
-        reject(err);
-      } else {
-        resolve();
+        console.error(`[${instanceId}] ffmpeg failed:`, stderr);
+        return reject(err);
       }
+      resolve();
     });
   });
 }
 
-// Job handler
-async function handle(msg) {
-  const body = JSON.parse(msg.Body);
+// Main transcoding handler
+async function handle(body) {
   const { jobId, filename, owner, bucketName } = body;
+  const baseName = path.parse(filename).name;
+  const inputPath = `/tmp/${filename}`;
+  const outputPath = `/tmp/transcoded-${baseName}.mp4`;
 
   try {
-    const startedAt = new Date().toISOString();
-    await updateJob(jobId, { status: "processing", startedAt, workerInstance: instanceId });
+    await updateJob(jobId, {
+      status: "processing",
+      startedAt: new Date().toISOString(),
+      workerInstance: instanceId,
+    });
 
-    const localInput = `/tmp/${filename}`;
-    const baseName = path.parse(filename).name;
-    const outputName = `transcoded-${baseName}.mp4`;
-    const localOutput = `/tmp/${outputName}`;
-
-    await downloadFile(`uploads/${filename}`, localInput, bucketName);
+    await downloadFile(`uploads/${filename}`, inputPath, bucketName);
     const t0 = Date.now();
-    await runFfmpeg(localInput, localOutput);
-
-    const sizeBytes = fileSizeBytes(localOutput);
-    const sha256 = await sha256File(localOutput);
-    const meta = await ffprobeJson(localOutput).catch(() => null);
-
-    const s3OutputKey = `transcoded/${outputName}`;
-    await uploadFile(localOutput, s3OutputKey, bucketName);
-    const downloadUrl = await getDownloadUrl(s3OutputKey);
+    await runFfmpeg(inputPath, outputPath);
     const t1 = Date.now();
+
+    const sizeBytes = fileSizeBytes(outputPath);
+    const sha256 = await sha256File(outputPath);
+    const meta = await ffprobeJson(outputPath).catch(() => null);
+    const s3Key = `transcoded/${path.basename(outputPath)}`;
+    await uploadFile(outputPath, s3Key, bucketName);
+    const downloadUrl = await getDownloadUrl(s3Key);
 
     await updateJob(jobId, {
       status: "done",
@@ -131,7 +98,7 @@ async function handle(msg) {
       outputs: [
         {
           type: "mp4",
-          s3Uri: `s3://${bucketName}/${s3OutputKey}`,
+          s3Uri: `s3://${bucketName}/${s3Key}`,
           downloadUrl,
           sizeBytes,
           sha256,
@@ -142,8 +109,8 @@ async function handle(msg) {
 
     console.log(`[${instanceId}] Job ${jobId} complete`);
   } catch (err) {
-    console.error(`[${instanceId}] Job ${body.jobId} failed:`, err.message);
-    await updateJob(body.jobId, {
+    console.error(`[${instanceId}] Job ${jobId} failed:`, err.message);
+    await updateJob(jobId, {
       status: "failed",
       error: err.message,
       finishedAt: new Date().toISOString(),
@@ -151,9 +118,39 @@ async function handle(msg) {
     });
   } finally {
     try {
-      if (fs.existsSync(`/tmp/${filename}`)) fs.unlinkSync(`/tmp/${filename}`);
-      if (fs.existsSync(`/tmp/transcoded-${path.parse(filename).name}.mp4`))
-        fs.unlinkSync(`/tmp/transcoded-${path.parse(filename).name}.mp4`);
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     } catch (_) {}
   }
 }
+
+// Start server AFTER instanceId is known
+getInstanceId().then((id) => {
+  instanceId = id;
+  console.log(`[${instanceId}] Worker initialized`);
+
+  http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/transcode") {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", async () => {
+        try {
+          const data = JSON.parse(body);
+          console.log(`[${instanceId}] Received job ${data.jobId}`);
+          await handle(data);
+          res.writeHead(200);
+          res.end("OK");
+        } catch (err) {
+          console.error(`[${instanceId}] Error handling job:`, err.message);
+          res.writeHead(500);
+          res.end("Error");
+        }
+      });
+    } else {
+      res.writeHead(200);
+      res.end("OK");
+    }
+  }).listen(80, () => {
+    console.log(`[${instanceId}] Listening on port 80`);
+  });
+});
