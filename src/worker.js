@@ -117,14 +117,15 @@ async function handle(body) {
 
     console.log(`[${instanceId}] Job ${jobId} completed successfully`);
   } catch (err) {
-    console.error(`[${instanceId}] Job ${jobId} failed:`, err.message);
-    await updateJob(jobId, {
-      status: "failed",
-      error: err.message,
-      finishedAt: new Date().toISOString(),
-      workerInstance: instanceId,
-    });
-  } finally {
+  console.error(`[${instanceId}] Job ${jobId} failed:`, err);
+  await updateJob(jobId, {
+    status: "failed",
+    error: err.message || JSON.stringify(err),
+    finishedAt: new Date().toISOString(),
+    workerInstance: instanceId,
+  });
+}
+ finally {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
