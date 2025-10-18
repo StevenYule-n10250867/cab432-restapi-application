@@ -1,7 +1,7 @@
 const fetch = require("node-fetch");
 const { performance } = require("perf_hooks");
 
-const endpoint = "http://n10250867-cab432-worker-alb.ap-southeast-2.elb.amazonaws.com/transcode";
+const endpoint = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
 const numberOfRequests = 6;
 const targetResponseTime = 1800;
 const targetTimeHysteresis = 1.2;

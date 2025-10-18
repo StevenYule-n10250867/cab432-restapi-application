@@ -38,7 +38,7 @@ router.post("/transcode", authMiddleware, async (req, res) => {
 
   // Direct call to worker ALB
   try {
-    const response = await fetch("http://n10250867-cab432-worker-alb.ap-southeast-2.elb.amazonaws.com/transcode", {
+    const response = await fetch("http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
