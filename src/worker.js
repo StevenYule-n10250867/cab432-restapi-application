@@ -78,7 +78,16 @@ async function handle(body) {
       workerInstance: instanceId,
     });
 
-    await downloadFile(`uploads/${filename}`, inputPath, bucketName);
+    console.log(`[${instanceId}] Attempting to download: s3://${bucketName}/uploads/${filename} to ${inputPath}`);
+
+    try {
+      await downloadFile(`uploads/${filename}`, inputPath, bucketName);
+      console.log(`[${instanceId}] Download successful`);
+    } catch (err) {
+      console.error(`[${instanceId}] Failed to download input file: ${err.message}`);
+      throw new Error(`Download failed: ${err.message}`);
+    }
+
     const t0 = Date.now();
     await runFfmpeg(inputPath, outputPath);
     const t1 = Date.now();

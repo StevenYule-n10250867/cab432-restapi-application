@@ -52,7 +52,7 @@ async function downloadFile(key, localFilePath, bucketName) {
         .on('error', reject);
     });
   } catch (err) {
-    console.warn(`[WARN] SDK failed for ${key}, trying public URL... (${err.message})`);
+    console.warn(`[${new Date().toISOString()}] SDK failed for ${key}: ${err.stack}`);
 
     // fallback to unauthenticated HTTPS
     const url = `https://s3.amazonaws.com/${finalBucket}/${key}`;
@@ -61,6 +61,7 @@ async function downloadFile(key, localFilePath, bucketName) {
     return new Promise((resolve, reject) => {
       https.get(url, (res) => {
         if (res.statusCode !== 200) {
+          console.error(`[${new Date().toISOString()}] Public S3 download failed: ${res.statusCode} for ${url}`);
           return reject(new Error(`Public S3 download failed: ${res.statusCode}`));
         }
 
