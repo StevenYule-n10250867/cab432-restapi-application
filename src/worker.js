@@ -66,7 +66,7 @@ function runFfmpeg(input, output) {
 
 // Main transcoding handler
 async function handle(body) {
-  const { jobId, filename, owner, bucketName } = body;
+  const { jobId, filename, owner, bucketName, inputUrl } = body;
   const baseName = path.parse(filename).name;
   const inputPath = `/tmp/${filename}`;
   const outputPath = `/tmp/transcoded-${baseName}.mp4`;
@@ -78,15 +78,9 @@ async function handle(body) {
       workerInstance: instanceId,
     });
 
-    console.log(`[${instanceId}] Attempting to download: s3://${bucketName}/uploads/${filename} to ${inputPath}`);
-
-    try {
-      await downloadFile(`uploads/${filename}`, inputPath, bucketName);
-      console.log(`[${instanceId}] Download successful`);
-    } catch (err) {
-      console.error(`[${instanceId}] Failed to download input file: ${err.message}`);
-      throw new Error(`Download failed: ${err.message}`);
-    }
+    console.log(`[${instanceId}] Downloading via presigned URL: ${inputUrl}`);
+    await downloadFromUrl(inputUrl, inputPath);
+    console.log(`[${instanceId}] Input download complete`);
 
     const t0 = Date.now();
     await runFfmpeg(inputPath, outputPath);
@@ -132,6 +126,7 @@ async function handle(body) {
     } catch (_) {}
   }
 }
+
 
 // Start server AFTER instanceId is known
 getInstanceId().then((id) => {

@@ -91,9 +91,26 @@ async function getDownloadUrl(key, expiresIn = 3600) {
   return await getSignedUrl(s3, command, { expiresIn });
 }
 
+/**
+ * Download from any HTTPS URL to local file
+ */
+async function downloadFromUrl(url, localFilePath) {
+  const file = fs.createWriteStream(localFilePath);
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Download failed: ${res.statusCode}`));
+      }
+      res.pipe(file);
+      file.on("finish", () => file.close(resolve));
+    }).on("error", reject);
+  });
+}
+
 module.exports = {
   uploadFile,
   downloadFile,
   getUploadUrl,
-  getDownloadUrl
+  getDownloadUrl,
+  downloadFromUrl
 };

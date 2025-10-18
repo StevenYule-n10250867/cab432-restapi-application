@@ -33,19 +33,25 @@ router.post("/transcode", authMiddleware, async (req, res) => {
 
   await putJob(job);
 
-  // use the PUBLIC bucket that workers can access
   const workerBucket = "n10250867-a2-media-api";
   const workerUrl = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
 
   try {
+    // --- Generate presigned URL for input file ---
+    const { getDownloadUrl } = require("../utils/s3");
+    const inputKey = `uploads/${filename}`;
+    const inputUrl = await getDownloadUrl(inputKey, 3600);
+
+    // --- Dispatch to worker with presigned URL ---
     const response = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         jobId: job.id,
-        filename: filename,
+        filename,
+        owner,
         bucketName: workerBucket,
-        owner: owner,
+        inputUrl,
       }),
     });
 
@@ -55,7 +61,7 @@ router.post("/transcode", authMiddleware, async (req, res) => {
       return res.status(500).json({ message: "Worker rejected job", details: text });
     }
 
-    console.log(`Dispatched job ${job.id} to worker via ALB`);
+    console.log(`Dispatched job ${job.id} with presigned URL`);
   } catch (err) {
     console.error("Failed to dispatch job to worker:", err.message);
     return res.status(500).json({ message: "Failed to dispatch job to worker" });
@@ -66,7 +72,6 @@ router.post("/transcode", authMiddleware, async (req, res) => {
     .json({ jobId: job.id, status: job.status });
 });
 
-module.exports = router;
 
 
 // ----------------------------
