@@ -55,7 +55,7 @@ async function downloadFile(key, localFilePath, bucketName) {
     console.warn(`[WARN] SDK failed for ${key}, trying public URL... (${err.message})`);
 
     // fallback to unauthenticated HTTPS
-    const url = `https://${finalBucket}.s3.amazonaws.com/${key}`;
+    const url = `https://s3.amazonaws.com/${finalBucket}/${key}`;
     const writeStream = fs.createWriteStream(localFilePath);
 
     return new Promise((resolve, reject) => {
