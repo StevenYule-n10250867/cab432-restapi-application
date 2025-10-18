@@ -16,9 +16,6 @@ const router = express.Router();
 // ----------------------------
 // POST /jobs/transcode
 // ----------------------------
-
-const fetch = require("node-fetch");
-
 router.post("/transcode", authMiddleware, async (req, res) => {
   const { filename } = req.body;
   if (!filename) {
@@ -36,22 +33,26 @@ router.post("/transcode", authMiddleware, async (req, res) => {
 
   await putJob(job);
 
-  // Direct call to worker ALB
+  // use the PUBLIC bucket that workers can access
+  const workerBucket = "n10250867-a2-media-api";
+  const workerUrl = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
+
   try {
-    const response = await fetch("http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode", {
+    const response = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         jobId: job.id,
         filename: filename,
-        bucketName: "n10250867-assessment3-bucket",
+        bucketName: workerBucket,
         owner: owner,
       }),
     });
 
     if (!response.ok) {
-      console.error("Worker rejected job:", await response.text());
-      return res.status(500).json({ message: "Worker rejected job" });
+      const text = await response.text();
+      console.error("Worker rejected job:", text);
+      return res.status(500).json({ message: "Worker rejected job", details: text });
     }
 
     console.log(`Dispatched job ${job.id} to worker via ALB`);
@@ -64,6 +65,8 @@ router.post("/transcode", authMiddleware, async (req, res) => {
     .set("Location", `/jobs/${job.id}`)
     .json({ jobId: job.id, status: job.status });
 });
+
+module.exports = router;
 
 
 // ----------------------------
