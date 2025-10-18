@@ -101,23 +101,26 @@ async function getDownloadUrl(key, expiresIn = 3600) {
  * Download from any HTTPS URL to a local file (used by worker for presigned URL).
  */
 async function downloadFromUrl(url, localFilePath) {
-  console.log(`[S3] Fetching file from: ${url}`);
-  const res = await fetch(url);
-  console.log(`[S3] Response status: ${res.status}`);
+  console.log(`[S3] Starting download to ${localFilePath}`);
+  try {
+    const res = await fetch(url);
+    console.log(`[S3] Fetch returned status ${res.status}`);
+    if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
 
-  if (!res.ok) {
-    throw new Error(`Download failed with status ${res.status}`);
+    const fileStream = fs.createWriteStream(localFilePath);
+    await new Promise((resolve, reject) => {
+      res.body.pipe(fileStream);
+      res.body.on("error", reject);
+      fileStream.on("finish", resolve);
+    });
+
+    console.log(`[S3] File written successfully to ${localFilePath}`);
+  } catch (err) {
+    console.error(`[S3] DownloadFromUrl error:`, err);
+    throw err;
   }
-
-  const fileStream = fs.createWriteStream(localFilePath);
-  await new Promise((resolve, reject) => {
-    res.body.pipe(fileStream);
-    res.body.on("error", reject);
-    fileStream.on("finish", resolve);
-  });
-
-  console.log(`[S3] Download complete: ${localFilePath}`);
 }
+
 
 
 module.exports = {
