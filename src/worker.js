@@ -150,7 +150,7 @@ getInstanceId().then((id) => {
       res.writeHead(200);
       res.end("OK");
     }
-  }).listen(80, () => {
-    console.log(`[${instanceId}] Listening on port 80`);
+  }).listen(3000, () => {
+    console.log(`[${instanceId}] Listening on port 3000`);
   });
 });
