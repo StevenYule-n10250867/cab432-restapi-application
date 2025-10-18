@@ -147,8 +147,8 @@ getInstanceId().then((id) => {
         }
       });
     } else {
-      res.writeHead(200);
-      res.end("OK");
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Healthy");
     }
   }).listen(3000, () => {
     console.log(`[${instanceId}] Listening on port 3000`);
