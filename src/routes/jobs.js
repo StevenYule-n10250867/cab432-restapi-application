@@ -19,58 +19,85 @@ const router = express.Router();
 router.post("/transcode", authMiddleware, async (req, res) => {
   const { filename } = req.body;
   if (!filename) {
+    console.error("[API] Missing filename in request body");
     return res.status(400).json({ message: "filename is required" });
   }
 
   const owner = req.user?.["cognito:username"] || "unknown";
+  const jobId = uuidv4();
+
+  console.log(`[API] Received new transcode job for ${filename} (owner: ${owner})`);
+
   const job = {
-    id: uuidv4(),
+    id: jobId,
     owner,
     filename,
     status: "queued",
     createdAt: new Date().toISOString(),
   };
 
-  await putJob(job);
+  try {
+    await putJob(job);
+    console.log(`[API] Job record stored in DynamoDB: ${jobId}`);
+  } catch (err) {
+    console.error(`[API] Failed to store job ${jobId}:`, err.message);
+    return res.status(500).json({ message: "Failed to store job metadata" });
+  }
 
   const workerBucket = "n10250867-a2-media-api";
-  const workerUrl = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
+  const workerUrl =
+    "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
 
   try {
-    // --- Generate presigned URL for input file ---
+    // --- Step 1: Generate presigned URL for the input file ---
     const { getDownloadUrl } = require("../utils/s3");
     const inputKey = `uploads/${filename}`;
-    const inputUrl = await getDownloadUrl(inputKey, 3600);
+    console.log(`[API] Generating presigned URL for s3://${workerBucket}/${inputKey}`);
 
-    // --- Dispatch to worker with presigned URL ---
+    const inputUrl = await getDownloadUrl(inputKey, 3600);
+    console.log(`[API] Presigned URL created for ${filename}: ${inputUrl}`);
+
+    // --- Step 2: Dispatch to worker via ALB ---
+    console.log(`[API] Dispatching job ${jobId} to worker service: ${workerUrl}`);
+    const body = {
+      jobId,
+      filename,
+      owner,
+      bucketName: workerBucket,
+      inputUrl,
+    };
+    console.log("[API] Payload to worker:", JSON.stringify(body, null, 2));
+
     const response = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jobId: job.id,
-        filename,
-        owner,
-        bucketName: workerBucket,
-        inputUrl,
-      }),
+      body: JSON.stringify(body),
     });
 
+    // --- Step 3: Handle worker response ---
     if (!response.ok) {
       const text = await response.text();
-      console.error("Worker rejected job:", text);
-      return res.status(500).json({ message: "Worker rejected job", details: text });
+      console.error(`[API] Worker rejected job ${jobId}:`, text);
+      return res
+        .status(500)
+        .json({ message: "Worker rejected job", details: text });
     }
 
-    console.log(`Dispatched job ${job.id} with presigned URL`);
+    console.log(`[API] Worker accepted job ${jobId}`);
   } catch (err) {
-    console.error("Failed to dispatch job to worker:", err.message);
-    return res.status(500).json({ message: "Failed to dispatch job to worker" });
+    console.error(`[API] Error dispatching job ${jobId}:`, err.message);
+    return res
+      .status(500)
+      .json({ message: "Failed to dispatch job to worker", details: err.message });
   }
 
-  res.status(202)
-    .set("Location", `/jobs/${job.id}`)
-    .json({ jobId: job.id, status: job.status });
+  // --- Step 4: Respond to client ---
+  res
+    .status(202)
+    .set("Location", `/jobs/${jobId}`)
+    .json({ jobId, status: job.status });
 });
+
 
 
 

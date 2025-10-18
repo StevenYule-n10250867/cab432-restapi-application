@@ -1,109 +1,125 @@
-const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
-const fs = require('fs');
-const https = require('https');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
+const fs = require("fs");
+const https = require("https");
 
-const REGION = process.env.AWS_REGION || 'ap-southeast-2';
+const REGION = process.env.AWS_REGION || "ap-southeast-2";
 const s3 = new S3Client({ region: REGION });
 const ssm = new SSMClient({ region: REGION });
 
 /**
- * Get the bucket name from env or SSM
+ * Get the bucket name from environment variable or SSM.
  */
 async function getBucketName() {
-  if (process.env.AWS_S3_BUCKET) return process.env.AWS_S3_BUCKET;
-  const cmd = new GetParameterCommand({ Name: '/n10250867/AWS_S3_BUCKET' });
+  if (process.env.AWS_S3_BUCKET) {
+    console.log(`[S3] Using bucket from environment: ${process.env.AWS_S3_BUCKET}`);
+    return process.env.AWS_S3_BUCKET;
+  }
+  console.log("[S3] Fetching bucket name from SSM...");
+  const cmd = new GetParameterCommand({ Name: "/n10250867/AWS_S3_BUCKET" });
   const res = await ssm.send(cmd);
+  console.log(`[S3] Retrieved bucket name: ${res.Parameter.Value}`);
   return res.Parameter.Value;
 }
 
 /**
- * Upload file using AWS SDK (authenticated)
+ * Upload file to S3.
  */
 async function uploadFile(localFilePath, key, bucketName) {
-  const finalBucket = bucketName || await getBucketName();
+  const finalBucket = bucketName || (await getBucketName());
+  console.log(`[S3] Uploading ${localFilePath} to s3://${finalBucket}/${key}`);
   const fileStream = fs.createReadStream(localFilePath);
-  await s3.send(new PutObjectCommand({
-    Bucket: finalBucket,
-    Key: key,
-    Body: fileStream
-  }));
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: finalBucket,
+      Key: key,
+      Body: fileStream,
+    })
+  );
+  console.log(`[S3] Upload complete: s3://${finalBucket}/${key}`);
   return `s3://${finalBucket}/${key}`;
 }
 
 /**
- * Download file — use AWS SDK if available, else fallback to public HTTP
+ * Download file from S3 using AWS SDK (authenticated),
+ * falling back to HTTPS if credentials are unavailable.
  */
 async function downloadFile(key, localFilePath, bucketName) {
-  const finalBucket = bucketName || await getBucketName();
+  const finalBucket = bucketName || (await getBucketName());
+  console.log(`[S3] Attempting authenticated download: s3://${finalBucket}/${key}`);
 
-  // Try SDK first
   try {
-    const { Body } = await s3.send(new GetObjectCommand({
-      Bucket: finalBucket,
-      Key: key
-    }));
+    const { Body } = await s3.send(
+      new GetObjectCommand({
+        Bucket: finalBucket,
+        Key: key,
+      })
+    );
 
     const writeStream = fs.createWriteStream(localFilePath);
     return new Promise((resolve, reject) => {
       Body.pipe(writeStream)
-        .on('finish', resolve)
-        .on('error', reject);
+        .on("finish", () => {
+          console.log(`[S3] Authenticated download complete: ${localFilePath}`);
+          resolve();
+        })
+        .on("error", reject);
     });
   } catch (err) {
-    console.warn(`[${new Date().toISOString()}] SDK failed for ${key}: ${err.stack}`);
+    console.warn(`[S3] SDK download failed, falling back to HTTPS: ${err.message}`);
 
-    // fallback to unauthenticated HTTPS
-    const url = `https://s3.amazonaws.com/${finalBucket}/${key}`;
-    const writeStream = fs.createWriteStream(localFilePath);
-
-    return new Promise((resolve, reject) => {
-      https.get(url, (res) => {
-        if (res.statusCode !== 200) {
-          console.error(`[${new Date().toISOString()}] Public S3 download failed: ${res.statusCode} for ${url}`);
-          return reject(new Error(`Public S3 download failed: ${res.statusCode}`));
-        }
-
-        res.pipe(writeStream)
-          .on('finish', resolve)
-          .on('error', reject);
-      }).on('error', reject);
-    });
+    const url = `https://${finalBucket}.s3.${REGION}.amazonaws.com/${key}`;
+    console.log(`[S3] Fallback URL: ${url}`);
+    return downloadFromUrl(url, localFilePath);
   }
 }
 
 /**
- * Presigned upload URL
+ * Generate a presigned upload URL.
  */
 async function getUploadUrl(key, expiresIn = 3600) {
   const bucket = await getBucketName();
   const command = new PutObjectCommand({ Bucket: bucket, Key: key });
-  return await getSignedUrl(s3, command, { expiresIn });
+  const url = await getSignedUrl(s3, command, { expiresIn });
+  console.log(`[S3] Presigned upload URL generated for ${key}`);
+  return url;
 }
 
 /**
- * Presigned download URL
+ * Generate a presigned download URL.
  */
 async function getDownloadUrl(key, expiresIn = 3600) {
   const bucket = await getBucketName();
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-  return await getSignedUrl(s3, command, { expiresIn });
+  const url = await getSignedUrl(s3, command, { expiresIn });
+  console.log(`[S3] Presigned download URL generated for ${key}`);
+  return url;
 }
 
 /**
- * Download from any HTTPS URL to local file
+ * Download from any HTTPS URL to a local file (used by worker for presigned URL).
  */
 async function downloadFromUrl(url, localFilePath) {
+  console.log(`[S3] Downloading from URL: ${url}`);
   const file = fs.createWriteStream(localFilePath);
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        return reject(new Error(`Download failed: ${res.statusCode}`));
-      }
-      res.pipe(file);
-      file.on("finish", () => file.close(resolve));
-    }).on("error", reject);
+    https
+      .get(url, (res) => {
+        if (res.statusCode !== 200) {
+          console.error(`[S3] Download failed with status ${res.statusCode} for ${url}`);
+          return reject(new Error(`Download failed: ${res.statusCode}`));
+        }
+        res.pipe(file);
+        file.on("finish", () => {
+          console.log(`[S3] Download complete: ${localFilePath}`);
+          file.close(resolve);
+        });
+      })
+      .on("error", (err) => {
+        console.error(`[S3] HTTPS download error: ${err.message}`);
+        reject(err);
+      });
   });
 }
 
@@ -112,5 +128,5 @@ module.exports = {
   downloadFile,
   getUploadUrl,
   getDownloadUrl,
-  downloadFromUrl
+  downloadFromUrl,
 };

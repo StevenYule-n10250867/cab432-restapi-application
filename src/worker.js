@@ -1,4 +1,4 @@
-const { downloadFile, uploadFile, getDownloadUrl } = require("./utils/s3");
+const { downloadFromUrl, uploadFile, getDownloadUrl } = require("./utils/s3");
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
@@ -59,6 +59,7 @@ function runFfmpeg(input, output) {
         console.error(`[${instanceId}] ffmpeg failed:`, stderr);
         return reject(err);
       }
+      console.log(`[${instanceId}] ffmpeg completed successfully`);
       resolve();
     });
   });
@@ -72,6 +73,7 @@ async function handle(body) {
   const outputPath = `/tmp/transcoded-${baseName}.mp4`;
 
   try {
+    console.log(`[${instanceId}] Starting job ${jobId} for ${filename}`);
     await updateJob(jobId, {
       status: "processing",
       startedAt: new Date().toISOString(),
@@ -90,8 +92,11 @@ async function handle(body) {
     const sha256 = await sha256File(outputPath);
     const meta = await ffprobeJson(outputPath).catch(() => null);
     const s3Key = `transcoded/${path.basename(outputPath)}`;
+
+    console.log(`[${instanceId}] Uploading transcoded file to S3...`);
     await uploadFile(outputPath, s3Key, bucketName);
     const downloadUrl = await getDownloadUrl(s3Key);
+    console.log(`[${instanceId}] Upload complete. Generating download URL...`);
 
     await updateJob(jobId, {
       status: "done",
@@ -110,7 +115,7 @@ async function handle(body) {
       ],
     });
 
-    console.log(`[${instanceId}] Job ${jobId} complete`);
+    console.log(`[${instanceId}] Job ${jobId} completed successfully`);
   } catch (err) {
     console.error(`[${instanceId}] Job ${jobId} failed:`, err.message);
     await updateJob(jobId, {
@@ -123,38 +128,42 @@ async function handle(body) {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    } catch (_) {}
+      console.log(`[${instanceId}] Cleaned up temp files for job ${jobId}`);
+    } catch (cleanupErr) {
+      console.warn(`[${instanceId}] Cleanup warning: ${cleanupErr.message}`);
+    }
   }
 }
 
-
-// Start server AFTER instanceId is known
+// Start worker server after instanceId is known
 getInstanceId().then((id) => {
   instanceId = id;
   console.log(`[${instanceId}] Worker initialized`);
 
-  http.createServer((req, res) => {
-    if (req.method === "POST" && req.url === "/transcode") {
-      let body = "";
-      req.on("data", (chunk) => (body += chunk));
-      req.on("end", async () => {
-        try {
-          const data = JSON.parse(body);
-          console.log(`[${instanceId}] Received job ${data.jobId}`);
-          await handle(data);
-          res.writeHead(200);
-          res.end("OK");
-        } catch (err) {
-          console.error(`[${instanceId}] Error handling job:`, err.message);
-          res.writeHead(500);
-          res.end("Error");
-        }
-      });
-    } else {
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("Healthy");
-    }
-  }).listen(3000, () => {
-    console.log(`[${instanceId}] Listening on port 3000`);
-  });
+  http
+    .createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/transcode") {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", async () => {
+          try {
+            const data = JSON.parse(body);
+            console.log(`[${instanceId}] Received job ${data.jobId}`);
+            await handle(data);
+            res.writeHead(200);
+            res.end("OK");
+          } catch (err) {
+            console.error(`[${instanceId}] Error handling job:`, err.message);
+            res.writeHead(500);
+            res.end("Error");
+          }
+        });
+      } else {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("Healthy");
+      }
+    })
+    .listen(3000, () => {
+      console.log(`[${instanceId}] Listening on port 3000`);
+    });
 });
