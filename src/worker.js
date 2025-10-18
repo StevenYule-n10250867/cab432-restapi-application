@@ -1,4 +1,7 @@
 const { downloadFromUrl, uploadFile, getDownloadUrl } = require("./utils/s3");
+if (typeof downloadFromUrl !== "function") {
+  console.error("[INIT] downloadFromUrl is not a function — check utils/s3.js exports");
+}
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
