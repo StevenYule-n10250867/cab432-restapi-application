@@ -2,87 +2,57 @@ const fetch = require("node-fetch");
 const { performance } = require("perf_hooks");
 
 const endpoint = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
-const numberOfRequests = 6;
-const targetResponseTime = 1800;
-const targetTimeHysteresis = 1.2;
-const minTargetConcurrentRequests = 2;
-const maxTargetConcurrentRequests = 8;
-const rollingAveragePastWeight = 0.95;
-const scaleoutTime = 10000;
+const numberOfRequests = 100;
+const testFilename = "sample-video.mp4"; // replace with a real file in your bucket
+const bucketName = "n10250867-assessment3-bucket";
 
-const rollingAverageCurrentWeight = 1 - rollingAveragePastWeight;
 let currentRequests = 0;
-let targetConcurrentRequests = minTargetConcurrentRequests;
-let rollingAverage = targetResponseTime;
-let lastScaleoutTime = performance.now();
+let rollingAverage = 1000;
+const maxConcurrentRequests = 5;
 
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function makeRequest(requestNumber) {
-  currentRequests += 1;
-  return new Promise((res) => {
-    const startTime = performance.now();
+async function sendTranscodeRequest(i) {
+  currentRequests++;
+  const start = performance.now();
+  const jobId = `test-job-${i}-${Date.now()}`;
 
-    fetch(endpoint, {
+  const payload = {
+    jobId,
+    filename: testFilename,
+    owner: "loadtester",
+    bucketName,
+  };
+
+  try {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filename: "sample-30s.mp4"
-      })
-    })
-      .then((res) => {
-        const responseTime = performance.now() - startTime;
-        rollingAverage =
-          rollingAverage * rollingAveragePastWeight +
-          responseTime * rollingAverageCurrentWeight;
+      body: JSON.stringify(payload),
+    });
 
-        console.log(
-          `Request ${requestNumber} completed in ${responseTime.toFixed(
-            2
-          )}ms | rolling avg: ${rollingAverage.toFixed(2)}ms`
-        );
+    const duration = performance.now() - start;
+    rollingAverage = rollingAverage * 0.9 + duration * 0.1;
 
-        if (performance.now() > scaleoutTime + lastScaleoutTime) {
-          if (
-            currentRequests <= targetConcurrentRequests &&
-            rollingAverage > targetResponseTime * targetTimeHysteresis
-          ) {
-            targetConcurrentRequests = Math.max(
-              minTargetConcurrentRequests,
-              targetConcurrentRequests - 1
-            );
-            lastScaleoutTime = performance.now();
-          } else if (
-            currentRequests >= targetConcurrentRequests &&
-            rollingAverage < targetResponseTime / targetTimeHysteresis
-          ) {
-            targetConcurrentRequests = Math.min(
-              maxTargetConcurrentRequests,
-              targetConcurrentRequests + 1
-            );
-            lastScaleoutTime = performance.now();
-          }
-        }
-      })
-      .catch((err) => {
-        console.error(`Request ${requestNumber} failed:`, err.message);
-      })
-      .finally(() => {
-        currentRequests -= 1;
-        res();
-      });
-  });
-}
-
-async function loadTest() {
-  for (let i = 0; i < numberOfRequests; i++) {
-    makeRequest(i);
-    while (currentRequests >= targetConcurrentRequests) {
-      await sleep(10);
+    if (!res.ok) {
+      console.error(`Request ${i} failed: ${res.status}`);
+    } else {
+      console.log(`Request ${i} completed in ${duration.toFixed(2)}ms | rolling avg: ${rollingAverage.toFixed(2)}ms`);
     }
+  } catch (err) {
+    console.error(`Request ${i} error: ${err.message}`);
+  } finally {
+    currentRequests--;
   }
 }
 
-loadTest();
+(async () => {
+  for (let i = 0; i < numberOfRequests; i++) {
+    while (currentRequests >= maxConcurrentRequests) {
+      await sleep(50);
+    }
+    sendTranscodeRequest(i);
+  }
+})();
