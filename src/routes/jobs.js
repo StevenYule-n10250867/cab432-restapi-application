@@ -7,6 +7,7 @@ const { putJob, updateJob, getJob, listJobs } = require('../utils/dynamodb');
 const { v4: uuidv4 } = require('uuid');
 const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo');
 const { uploadFile, downloadFile } = require('../utils/s3');
+const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const allowPublicReports = process.env.ALLOW_PUBLIC_REPORTS === 'true';
 const passThrough = (_req, _res, next) => next();
