@@ -12,7 +12,7 @@ const cognitoRegion = "ap-southeast-2";
 const clientId = "4rrngtjump7gjqc90lg46m4jnl";
 const clientSecret = "hjk5dngq7uusequ06eic17c55k16uaj711hf0lg9slrrgnnqb9r";
 const username = "adminuser";
-const password = "<your-password>";
+const password = "TestPass123!";
 
 const numberOfRequests = 25;
 const maxConcurrentRequests = 5;
