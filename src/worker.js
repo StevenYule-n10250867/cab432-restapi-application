@@ -9,6 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 
+
 let instanceId = "unknown-instance";
 
 // Get EC2 instance ID (IMDSv2)
