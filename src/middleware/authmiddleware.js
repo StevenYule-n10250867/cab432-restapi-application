@@ -1,7 +1,7 @@
 // src/middleware/authmiddleware.js
 const jwt = require('jsonwebtoken');
 const jwkToPem = require('jwk-to-pem');
-const fetch = require('node-fetch');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const jwksUrl = `https://cognito-idp.${process.env.AWS_REGION}.amazonaws.com/${process.env.COGNITO_USER_POOL_ID}/.well-known/jwks.json`;
 
