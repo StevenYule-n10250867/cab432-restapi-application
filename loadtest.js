@@ -7,7 +7,7 @@ const {
   InitiateAuthCommand,
 } = require("@aws-sdk/client-cognito-identity-provider");
 
-const apiEndpoint = "http://<your-api-public-ip>:3000/jobs/transcode";
+const apiEndpoint = "http://3.26.159.247:3000/jobs/transcode";
 const cognitoRegion = "ap-southeast-2";
 const clientId = "4rrngtjump7gjqc90lg46m4jnl";
 const clientSecret = "hjk5dngq7uusequ06eic17c55k16uaj711hf0lg9slrrgnnqb9r";
