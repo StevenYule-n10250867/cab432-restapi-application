@@ -5,7 +5,7 @@ info:
   description: REST API for video upload, jobs, and authentication using AWS Cognito + S3.
 
 servers:
-  - url: http://3.26.63.2:3000
+  - url: http://3.26.159.247:3000
     description: Public EC2 server
   - url: http://localhost:3000
     description: Local development
