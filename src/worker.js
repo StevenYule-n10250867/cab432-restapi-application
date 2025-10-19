@@ -146,8 +146,11 @@ getInstanceId().then((id) => {
           res.end("Bad Request");
         }
       });
+    } else if (req.url === "/" || req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Healthy");
     } else {
-      res.writeHead(404);
+      res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
     }
   });
