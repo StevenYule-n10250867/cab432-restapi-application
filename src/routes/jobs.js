@@ -84,9 +84,11 @@ router.post("/load", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "filename and count are required" });
   }
 
+  const config = await loadConfig();
+  const bucketName = config.AWS_S3_BUCKET;
+
   const owner = req.user?.["cognito:username"] || "unknown";
   const QUEUE_URL = await getQueueUrl();
-
   const jobs = [];
 
   for (let i = 0; i < count; i++) {
@@ -99,12 +101,13 @@ router.post("/load", authMiddleware, async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    await putJob(job); // add to DynamoDB
+    await putJob(job); // store in DynamoDB
 
     const messageBody = JSON.stringify({
       jobId,
       filename,
       owner,
+      bucketName,
     });
 
     const command = new SendMessageCommand({
@@ -121,6 +124,7 @@ router.post("/load", authMiddleware, async (req, res) => {
     jobIds: jobs,
   });
 });
+
 
 //-----------------------------
 // GET /jobs/:id
