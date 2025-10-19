@@ -55,7 +55,7 @@ function runFfmpeg(input, output) {
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
         console.error(`[${instanceId}] ffmpeg failed:`, stderr);
-        return reject(err);
+        return reject(new Error(`ffmpeg error: ${stderr}`));
       }
       console.log(`[${instanceId}] ffmpeg completed`);
       resolve();
@@ -86,7 +86,7 @@ async function handle(body) {
     const meta = await ffprobeJson(outputPath).catch(() => null);
 
     await uploadFile(outputPath, s3Key, bucketName);
-    const downloadUrl = await getDownloadUrl(s3Key); // ← restore presigned URL generation
+    const downloadUrl = await getDownloadUrl(s3Key);
 
     await updateJob(jobId, {
       status: "done",
@@ -124,7 +124,7 @@ getInstanceId().then((id) => {
   instanceId = id;
   console.log(`[${instanceId}] Worker ready`);
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
       return res.end("Healthy");
@@ -133,18 +133,24 @@ getInstanceId().then((id) => {
     if (req.method === "POST" && req.url === "/transcode") {
       let body = "";
       req.on("data", (chunk) => (body += chunk));
-      req.on("end", async () => {
+      req.on("end", () => {
+        let data;
         try {
-          const data = JSON.parse(body);
-          console.log(`[${instanceId}] Received job ${data.jobId} for ${data.filename}`);
-          res.writeHead(200);
-          res.end("OK");
-          await handle(data);
+          data = JSON.parse(body);
         } catch (err) {
           console.error(`[${instanceId}] Error parsing request: ${err.message}`);
           res.writeHead(400);
-          res.end("Bad Request");
+          return res.end("Bad Request");
         }
+
+        console.log(`[${instanceId}] Received job ${data.jobId} for ${data.filename}`);
+        res.writeHead(200);
+        res.end("OK");
+
+        // Safely handle job in background and catch all exceptions
+        handle(data).catch((err) => {
+          console.error(`[${instanceId}] Uncaught error in handle(): ${err.message}`);
+        });
       });
     } else if (req.url === "/" || req.url === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
@@ -157,5 +163,3 @@ getInstanceId().then((id) => {
 
   server.listen(3000, () => console.log(`[${instanceId}] Listening on port 3000`));
 });
-
-
