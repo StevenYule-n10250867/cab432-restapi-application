@@ -70,22 +70,49 @@ async function handle(body) {
   const outputPath = `/tmp/transcoded-${baseName}.mp4`;
 
   try {
-    await updateJob(jobId, { status: "processing", workerInstance: instanceId });
+    await updateJob(jobId, {
+      status: "processing",
+      startedAt: new Date().toISOString(),
+      workerInstance: instanceId,
+    });
+
     console.log(`[${instanceId}] Downloading input from S3...`);
     await downloadFile(`uploads/${filename}`, inputPath, bucketName);
     await runFfmpeg(inputPath, outputPath);
 
-    await uploadFile(outputPath, `transcoded/${path.basename(outputPath)}`, bucketName);
+    // Collect metadata for report output
+    const s3Key = `transcoded/${path.basename(outputPath)}`;
+    const sizeBytes = fileSizeBytes(outputPath);
+    const sha256 = await sha256File(outputPath);
+    const meta = await ffprobeJson(outputPath).catch(() => null);
+
+    await uploadFile(outputPath, s3Key, bucketName);
+    console.log(`[${instanceId}] Upload complete for ${s3Key}`);
+
+    // Save output details for /report view
     await updateJob(jobId, {
       status: "done",
       finishedAt: new Date().toISOString(),
       workerInstance: instanceId,
+      outputs: [
+        {
+          type: "mp4",
+          s3Uri: `s3://${bucketName}/${s3Key}`,
+          sizeBytes,
+          sha256,
+          meta,
+        },
+      ],
     });
 
     console.log(`[${instanceId}] Job ${jobId} done`);
   } catch (err) {
     console.error(`[${instanceId}] Job ${jobId} failed:`, err.message);
-    await updateJob(jobId, { status: "failed", error: err.message, workerInstance: instanceId });
+    await updateJob(jobId, {
+      status: "failed",
+      error: err.message,
+      workerInstance: instanceId,
+    });
   } finally {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
@@ -93,6 +120,7 @@ async function handle(body) {
     } catch {}
   }
 }
+
 
 getInstanceId().then((id) => {
   instanceId = id;
