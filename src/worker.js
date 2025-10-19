@@ -1,4 +1,4 @@
-const { downloadFile, uploadFile } = require("./utils/s3");
+const { downloadFile, uploadFile, getDownloadUrl } = require("./utils/s3");
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
 const { exec } = require("child_process");
@@ -50,7 +50,7 @@ function getInstanceId() {
 
 function runFfmpeg(input, output) {
   return new Promise((resolve, reject) => {
-    const cmd = `ffmpeg -y -i "${input}" -vf "scale=1280:720,format=yuv420p" -vcodec libx264 -preset slower -crf 22 "${output}"`;
+    const cmd = `ffmpeg -y -i "${input}" -vf "scale=1280:720,format=yuv420p" -vcodec libx264 -preset faster -crf 23 "${output}"`;
     console.log(`[${instanceId}] Running ffmpeg...`);
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
@@ -80,16 +80,14 @@ async function handle(body) {
     await downloadFile(`uploads/${filename}`, inputPath, bucketName);
     await runFfmpeg(inputPath, outputPath);
 
-    // Collect metadata for report output
     const s3Key = `transcoded/${path.basename(outputPath)}`;
     const sizeBytes = fileSizeBytes(outputPath);
     const sha256 = await sha256File(outputPath);
     const meta = await ffprobeJson(outputPath).catch(() => null);
 
     await uploadFile(outputPath, s3Key, bucketName);
-    console.log(`[${instanceId}] Upload complete for ${s3Key}`);
+    const downloadUrl = await getDownloadUrl(s3Key); // ← restore presigned URL generation
 
-    // Save output details for /report view
     await updateJob(jobId, {
       status: "done",
       finishedAt: new Date().toISOString(),
@@ -98,6 +96,7 @@ async function handle(body) {
         {
           type: "mp4",
           s3Uri: `s3://${bucketName}/${s3Key}`,
+          downloadUrl,
           sizeBytes,
           sha256,
           meta,
@@ -120,7 +119,6 @@ async function handle(body) {
     } catch {}
   }
 }
-
 
 getInstanceId().then((id) => {
   instanceId = id;
