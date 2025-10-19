@@ -3,6 +3,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
 const fs = require("fs");
 const https = require("https");
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const REGION = process.env.AWS_REGION || "ap-southeast-2";
 const s3 = new S3Client({ region: REGION });
