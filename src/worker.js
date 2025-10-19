@@ -9,7 +9,6 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 
-
 let instanceId = "unknown-instance";
 
 // Get EC2 instance ID (IMDSv2)
@@ -121,15 +120,14 @@ async function handle(body) {
 
     console.log(`[${instanceId}] Job ${jobId} completed successfully`);
   } catch (err) {
-  console.error(`[${instanceId}] Job ${jobId} failed:`, err);
-  await updateJob(jobId, {
-    status: "failed",
-    error: err.message || JSON.stringify(err),
-    finishedAt: new Date().toISOString(),
-    workerInstance: instanceId,
-  });
-}
- finally {
+    console.error(`[${instanceId}] Job ${jobId} failed:`, err);
+    await updateJob(jobId, {
+      status: "failed",
+      error: err.message || JSON.stringify(err),
+      finishedAt: new Date().toISOString(),
+      workerInstance: instanceId,
+    });
+  } finally {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
@@ -140,7 +138,7 @@ async function handle(body) {
   }
 }
 
-// Start worker server after instanceId is known
+// Start worker server
 getInstanceId().then((id) => {
   instanceId = id;
   console.log(`[${instanceId}] Worker initialized`);
@@ -150,17 +148,23 @@ getInstanceId().then((id) => {
       if (req.method === "POST" && req.url === "/transcode") {
         let body = "";
         req.on("data", (chunk) => (body += chunk));
-        req.on("end", async () => {
+        req.on("end", () => {
           try {
             const data = JSON.parse(body);
             console.log(`[${instanceId}] Received job ${data.jobId}`);
-            await handle(data);
+
+            // respond immediately to prevent ALB timeout
             res.writeHead(200);
             res.end("OK");
+
+            // process the job asynchronously in background
+            handle(data).catch((err) => {
+              console.error(`[${instanceId}] Background job failed:`, err.message);
+            });
           } catch (err) {
-            console.error(`[${instanceId}] Error handling job:`, err.message);
-            res.writeHead(500);
-            res.end("Error");
+            console.error(`[${instanceId}] Error parsing request:`, err.message);
+            res.writeHead(400);
+            res.end("Bad Request");
           }
         });
       } else {

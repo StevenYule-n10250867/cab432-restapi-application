@@ -68,10 +68,14 @@ router.post("/transcode", authMiddleware, async (req, res) => {
     };
     console.log("[API] Payload to worker:", JSON.stringify(body, null, 2));
 
+    const { Agent } = require("http");
+    const agent = new Agent({ keepAlive: false });
+
     const response = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      agent, // force new connection → ALB load balances
     });
 
     // --- Step 3: Handle worker response ---
