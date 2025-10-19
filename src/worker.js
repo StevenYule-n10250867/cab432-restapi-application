@@ -115,15 +115,32 @@ async function pollSQS() {
 
       const messages = response.Messages || [];
 
+      if (messages.length === 0) {
+        console.log(`[${instanceId}] No messages received`);
+      }
+
       for (const msg of messages) {
-        const body = JSON.parse(msg.Body);
-        console.log(`[${instanceId}] Received job ${body.jobId}`);
+        console.log(`[${instanceId}] Raw SQS Message:`, msg.Body);
+
+        let body;
+        try {
+          body = JSON.parse(msg.Body);
+        } catch (err) {
+          console.error(`[${instanceId}] Failed to parse message body:`, err.message);
+          continue; // skip this message
+        }
+
+        console.log(`[${instanceId}] Parsed job ID:`, body.jobId);
+        console.log(`[${instanceId}] Full parsed job:`, body);
+
         await processJob(body);
 
         await sqs.send(new DeleteMessageCommand({
           QueueUrl: QUEUE_URL,
           ReceiptHandle: msg.ReceiptHandle,
         }));
+
+        console.log(`[${instanceId}] Deleted message from queue`);
       }
     } catch (err) {
       console.error(`[${instanceId}] SQS polling error:`, err.message);
@@ -131,6 +148,7 @@ async function pollSQS() {
     }
   }
 }
+
 
 // Start basic HTTP server for health checks
 function startHealthServer() {
