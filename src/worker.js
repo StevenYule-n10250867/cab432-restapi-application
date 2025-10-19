@@ -124,26 +124,45 @@ getInstanceId().then((id) => {
   instanceId = id;
   console.log(`[${instanceId}] Worker ready`);
 
-  http
-    .createServer((req, res) => {
-      if (req.method === "POST" && req.url === "/transcode") {
+  const server = http.createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/transcode") {
+      try {
         let body = "";
         req.on("data", (chunk) => (body += chunk));
-        req.on("end", () => {
+        req.on("end", async () => {
           try {
+            if (!body) {
+              console.error(`[${instanceId}] Empty request body`);
+              res.writeHead(400);
+              return res.end("Empty body");
+            }
+
             const data = JSON.parse(body);
-            res.writeHead(200);
+            console.log(`[${instanceId}] Received job ${data.jobId} for ${data.filename}`);
+            res.writeHead(200, { "Content-Type": "text/plain" });
             res.end("OK");
-            handle(data);
+
+            await handle(data);
           } catch (err) {
+            console.error(`[${instanceId}] Error parsing job body: ${err.message}`);
             res.writeHead(400);
             res.end("Bad Request");
           }
         });
-      } else {
-        res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end("Healthy");
+      } catch (err) {
+        console.error(`[${instanceId}] Unexpected server error:`, err.message);
+        res.writeHead(500);
+        res.end("Internal Server Error");
       }
-    })
-    .listen(3000, () => console.log(`[${instanceId}] Listening on port 3000`));
+    } else if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Healthy");
+    } else {
+      res.writeHead(404);
+      res.end("Not Found");
+    }
+  });
+
+  server.listen(3000, () => console.log(`[${instanceId}] Listening on port 3000`));
 });
+
