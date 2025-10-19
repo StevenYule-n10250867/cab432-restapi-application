@@ -1,10 +1,11 @@
+// loadtest.js
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const { performance } = require("perf_hooks");
 
-const endpoint = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
+const apiEndpoint = "http://<your-api-instance-public-ip>:3000/jobs/transcode";
+
 const numberOfRequests = 100;
-const testFilename = "sample-video.mp4"; // replace with a real file in your bucket
-const bucketName = "n10250867-assessment3-bucket";
+const testFilename = "sample-30s.mp4";
 
 let currentRequests = 0;
 let rollingAverage = 1000;
@@ -17,19 +18,15 @@ function sleep(ms) {
 async function sendTranscodeRequest(i) {
   currentRequests++;
   const start = performance.now();
-  const jobId = `test-job-${i}-${Date.now()}`;
 
-  const payload = {
-    jobId,
-    filename: testFilename,
-    owner: "loadtester",
-    bucketName,
-  };
+  const payload = { filename: testFilename };
 
   try {
-    const res = await fetch(endpoint, {
+    const res = await fetch(apiEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(payload),
     });
 
@@ -37,9 +34,13 @@ async function sendTranscodeRequest(i) {
     rollingAverage = rollingAverage * 0.9 + duration * 0.1;
 
     if (!res.ok) {
-      console.error(`Request ${i} failed: ${res.status}`);
+      const text = await res.text();
+      console.error(`Request ${i} failed (${res.status}): ${text}`);
     } else {
-      console.log(`Request ${i} completed in ${duration.toFixed(2)}ms | rolling avg: ${rollingAverage.toFixed(2)}ms`);
+      const data = await res.json().catch(() => ({}));
+      console.log(
+        `Request ${i} completed in ${duration.toFixed(2)}ms | rolling avg: ${rollingAverage.toFixed(2)}ms | jobId: ${data.jobId}`
+      );
     }
   } catch (err) {
     console.error(`Request ${i} error: ${err.message}`);
@@ -49,6 +50,7 @@ async function sendTranscodeRequest(i) {
 }
 
 (async () => {
+  console.log(`Starting load test — sending ${numberOfRequests} requests to ${apiEndpoint}`);
   for (let i = 0; i < numberOfRequests; i++) {
     while (currentRequests >= maxConcurrentRequests) {
       await sleep(50);
