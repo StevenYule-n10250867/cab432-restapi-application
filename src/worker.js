@@ -125,38 +125,27 @@ getInstanceId().then((id) => {
   console.log(`[${instanceId}] Worker ready`);
 
   const server = http.createServer(async (req, res) => {
-    if (req.method === "POST" && req.url === "/transcode") {
-      try {
-        let body = "";
-        req.on("data", (chunk) => (body += chunk));
-        req.on("end", async () => {
-          try {
-            if (!body) {
-              console.error(`[${instanceId}] Empty request body`);
-              res.writeHead(400);
-              return res.end("Empty body");
-            }
-
-            const data = JSON.parse(body);
-            console.log(`[${instanceId}] Received job ${data.jobId} for ${data.filename}`);
-            res.writeHead(200, { "Content-Type": "text/plain" });
-            res.end("OK");
-
-            await handle(data);
-          } catch (err) {
-            console.error(`[${instanceId}] Error parsing job body: ${err.message}`);
-            res.writeHead(400);
-            res.end("Bad Request");
-          }
-        });
-      } catch (err) {
-        console.error(`[${instanceId}] Unexpected server error:`, err.message);
-        res.writeHead(500);
-        res.end("Internal Server Error");
-      }
-    } else if (req.url === "/health") {
+    if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("Healthy");
+      return res.end("Healthy");
+    }
+
+    if (req.method === "POST" && req.url === "/transcode") {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", async () => {
+        try {
+          const data = JSON.parse(body);
+          console.log(`[${instanceId}] Received job ${data.jobId} for ${data.filename}`);
+          res.writeHead(200);
+          res.end("OK");
+          await handle(data);
+        } catch (err) {
+          console.error(`[${instanceId}] Error parsing request: ${err.message}`);
+          res.writeHead(400);
+          res.end("Bad Request");
+        }
+      });
     } else {
       res.writeHead(404);
       res.end("Not Found");
@@ -165,4 +154,5 @@ getInstanceId().then((id) => {
 
   server.listen(3000, () => console.log(`[${instanceId}] Listening on port 3000`));
 });
+
 
