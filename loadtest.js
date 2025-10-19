@@ -1,4 +1,3 @@
-// loadtest.js
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const { performance } = require("perf_hooks");
 const crypto = require("crypto");
@@ -7,27 +6,22 @@ const {
   InitiateAuthCommand,
 } = require("@aws-sdk/client-cognito-identity-provider");
 
-const apiEndpoint = "http://3.26.159.247:3000/jobs/transcode"; // your API instance
+const apiEndpoint = "http://3.26.159.247:3000/jobs/load";
 const cognitoRegion = "ap-southeast-2";
 const clientId = "4rrngtjump7gjqc90lg46m4jnl";
 const clientSecret = "hjk5dngq7uusequ06eic17c55k16uaj711hf0lg9slrrgnnqb9r";
 const username = "adminuser";
 const password = "TestPass123!";
 
-// Load test parameters
-const numberOfRequests = 100;          // total number of transcode jobs to queue
-const maxConcurrentRequests = 10;      // how many jobs to run at once
-const testFilename = "sample-30s.mp4"; // the file in your S3 bucket
-
-let currentRequests = 0;
-let rollingAverage = 1000;
+// Adjust these to simulate a trickling load
+const totalRequests = 24;
+const delayBetweenRequests = 10000; // 3 seconds per request (adjust to trigger scale-out)
 
 function generateSecretHash(username) {
   return crypto.createHmac("SHA256", clientSecret).update(username + clientId).digest("base64");
 }
 
 async function getJwtToken() {
-  console.log("Authenticating with Cognito...");
   const client = new CognitoIdentityProviderClient({ region: cognitoRegion });
   const command = new InitiateAuthCommand({
     AuthFlow: "USER_PASSWORD_AUTH",
@@ -42,16 +36,11 @@ async function getJwtToken() {
   return response.AuthenticationResult.IdToken;
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function sendTranscodeRequest(i, token) {
-  currentRequests++;
-  const start = performance.now();
-
-  const payload = {
-    filename: testFilename,
+  async function sendTranscodeRequest(i, token) {
+    const start = performance.now();
+    const payload = {
+    filename: "sample-30s.mp4",
+    count: 1
   };
 
   try {
@@ -65,7 +54,6 @@ async function sendTranscodeRequest(i, token) {
     });
 
     const duration = performance.now() - start;
-    rollingAverage = rollingAverage * 0.9 + duration * 0.1;
 
     if (!res.ok) {
       const text = await res.text();
@@ -73,27 +61,20 @@ async function sendTranscodeRequest(i, token) {
     } else {
       const data = await res.json().catch(() => ({}));
       console.log(
-        `Request ${i} completed in ${duration.toFixed(2)}ms | avg: ${rollingAverage.toFixed(
-          2
-        )}ms | jobId: ${data.jobId}`
+        `Request ${i} completed in ${duration.toFixed(2)}ms | jobId: ${data.jobId}`
       );
     }
   } catch (err) {
     console.error(`Request ${i} error: ${err.message}`);
-  } finally {
-    currentRequests--;
   }
 }
 
 (async () => {
   const token = await getJwtToken();
-  console.log("JWT token obtained");
-  console.log(`Starting load test → ${numberOfRequests} requests to ${apiEndpoint}`);
+  console.log("Starting trickle load test...");
 
-  for (let i = 0; i < numberOfRequests; i++) {
-    while (currentRequests >= maxConcurrentRequests) {
-      await sleep(50);
-    }
-    sendTranscodeRequest(i, token);
+  for (let i = 0; i < totalRequests; i++) {
+    sendTranscodeRequest(i + 1, token);
+    await new Promise((resolve) => setTimeout(resolve, delayBetweenRequests));
   }
 })();

@@ -9,6 +9,13 @@ const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo')
 const { uploadFile, downloadFile } = require('../utils/s3');
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
+const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
+const sqs = new SQSClient({ region: "ap-southeast-2" });
+
+async function getQueueUrl() {
+  return "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n10250867-media-transcode-queue";
+}
+
 const allowPublicReports = process.env.ALLOW_PUBLIC_REPORTS === 'true';
 const passThrough = (_req, _res, next) => next();
 

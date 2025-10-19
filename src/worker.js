@@ -1,3 +1,4 @@
+const { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } = require("@aws-sdk/client-sqs");
 const { downloadFile, uploadFile, getDownloadUrl } = require("./utils/s3");
 const { updateJob } = require("./utils/dynamodb");
 const { ffprobeJson, fileSizeBytes, sha256File } = require("./utils/mediaInfo");
@@ -6,65 +7,50 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 
+const QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n10250867-media-transcode-queue";
+const REGION = "ap-southeast-2";
 let instanceId = "unknown-instance";
 
-// Get EC2 instance ID (IMDSv2)
-function getInstanceId() {
+// Get EC2 instance ID
+async function getInstanceId() {
   return new Promise((resolve) => {
-    const tokenReq = http.request(
+    const req = http.request(
       {
         host: "169.254.169.254",
-        path: "/latest/api/token",
-        method: "PUT",
-        headers: { "X-aws-ec2-metadata-token-ttl-seconds": "60" },
+        path: "/latest/meta-data/instance-id",
+        method: "GET",
         timeout: 1000,
       },
-      (tokenRes) => {
-        let token = "";
-        tokenRes.on("data", (chunk) => (token += chunk));
-        tokenRes.on("end", () => {
-          if (!token) return resolve("unknown-instance");
-          const idReq = http.request(
-            {
-              host: "169.254.169.254",
-              path: "/latest/meta-data/instance-id",
-              method: "GET",
-              headers: { "X-aws-ec2-metadata-token": token },
-              timeout: 1000,
-            },
-            (idRes) => {
-              let id = "";
-              idRes.on("data", (chunk) => (id += chunk));
-              idRes.on("end", () => resolve(id.trim() || "unknown-instance"));
-            }
-          );
-          idReq.on("error", () => resolve("unknown-instance"));
-          idReq.end();
-        });
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => resolve(data.trim() || "unknown-instance"));
       }
     );
-    tokenReq.on("error", () => resolve("unknown-instance"));
-    tokenReq.end();
+    req.on("error", () => resolve("unknown-instance"));
+    req.end();
   });
 }
 
+// Handle video transcoding
 function runFfmpeg(input, output) {
   return new Promise((resolve, reject) => {
     const cmd = `ffmpeg -y -i "${input}" -vf "scale=1280:720,format=yuv420p" -vcodec libx264 -preset faster -crf 23 "${output}"`;
     console.log(`[${instanceId}] Running ffmpeg...`);
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
-        console.error(`[${instanceId}] ffmpeg failed:`, stderr);
-        return reject(new Error(`ffmpeg error: ${stderr}`));
+        console.error(`[${instanceId}] ffmpeg error:`, stderr);
+        return reject(err);
       }
-      console.log(`[${instanceId}] ffmpeg completed`);
+      console.log(`[${instanceId}] ffmpeg complete`);
       resolve();
     });
   });
 }
 
-async function handle(body) {
-  const { jobId, filename, bucketName } = body;
+// Process a single job
+async function processJob(job) {
+  const { jobId, filename, bucketName } = job;
   const baseName = path.parse(filename).name;
   const inputPath = `/tmp/${filename}`;
   const outputPath = `/tmp/transcoded-${baseName}.mp4`;
@@ -76,7 +62,6 @@ async function handle(body) {
       workerInstance: instanceId,
     });
 
-    console.log(`[${instanceId}] Downloading input from S3...`);
     await downloadFile(`uploads/${filename}`, inputPath, bucketName);
     await runFfmpeg(inputPath, outputPath);
 
@@ -84,24 +69,22 @@ async function handle(body) {
     const sizeBytes = fileSizeBytes(outputPath);
     const sha256 = await sha256File(outputPath);
     const meta = await ffprobeJson(outputPath).catch(() => null);
+    const downloadUrl = await getDownloadUrl(s3Key);
 
     await uploadFile(outputPath, s3Key, bucketName);
-    const downloadUrl = await getDownloadUrl(s3Key);
 
     await updateJob(jobId, {
       status: "done",
       finishedAt: new Date().toISOString(),
       workerInstance: instanceId,
-      outputs: [
-        {
-          type: "mp4",
-          s3Uri: `s3://${bucketName}/${s3Key}`,
-          downloadUrl,
-          sizeBytes,
-          sha256,
-          meta,
-        },
-      ],
+      outputs: [{
+        type: "mp4",
+        s3Uri: `s3://${bucketName}/${s3Key}`,
+        downloadUrl,
+        sizeBytes,
+        sha256,
+        meta
+      }]
     });
 
     console.log(`[${instanceId}] Job ${jobId} done`);
@@ -113,53 +96,63 @@ async function handle(body) {
       workerInstance: instanceId,
     });
   } finally {
-    try {
-      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    } catch {}
+    try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch {}
+    try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
   }
 }
 
-getInstanceId().then((id) => {
-  instanceId = id;
-  console.log(`[${instanceId}] Worker ready`);
+// Poll SQS for messages
+async function pollSQS() {
+  const sqs = new SQSClient({ region: REGION });
 
+  while (true) {
+    try {
+      const response = await sqs.send(new ReceiveMessageCommand({
+        QueueUrl: QUEUE_URL,
+        MaxNumberOfMessages: 1,
+        WaitTimeSeconds: 20,
+      }));
+
+      const messages = response.Messages || [];
+
+      for (const msg of messages) {
+        const body = JSON.parse(msg.Body);
+        console.log(`[${instanceId}] Received job ${body.jobId}`);
+        await processJob(body);
+
+        await sqs.send(new DeleteMessageCommand({
+          QueueUrl: QUEUE_URL,
+          ReceiptHandle: msg.ReceiptHandle,
+        }));
+      }
+    } catch (err) {
+      console.error(`[${instanceId}] SQS polling error:`, err.message);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+}
+
+// Start basic HTTP server for health checks
+function startHealthServer() {
   const server = http.createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
       return res.end("Healthy");
     }
 
-    if (req.method === "POST" && req.url === "/transcode") {
-      let body = "";
-      req.on("data", (chunk) => (body += chunk));
-      req.on("end", () => {
-        let data;
-        try {
-          data = JSON.parse(body);
-        } catch (err) {
-          console.error(`[${instanceId}] Error parsing request: ${err.message}`);
-          res.writeHead(400);
-          return res.end("Bad Request");
-        }
-
-        console.log(`[${instanceId}] Received job ${data.jobId} for ${data.filename}`);
-        res.writeHead(200);
-        res.end("OK");
-
-        // Safely handle job in background and catch all exceptions
-        handle(data).catch((err) => {
-          console.error(`[${instanceId}] Uncaught error in handle(): ${err.message}`);
-        });
-      });
-    } else if (req.url === "/" || req.url === "/health") {
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("Healthy");
-    } else {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found");
-    }
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not Found");
   });
 
-  server.listen(3000, () => console.log(`[${instanceId}] Listening on port 3000`));
+  server.listen(3000, () => {
+    console.log(`[${instanceId}] Health check server running on port 3000`);
+  });
+}
+
+// Init worker
+getInstanceId().then((id) => {
+  instanceId = id;
+  console.log(`[${instanceId}] Worker started — polling SQS and ready for health checks`);
+  startHealthServer();
+  pollSQS();
 });
