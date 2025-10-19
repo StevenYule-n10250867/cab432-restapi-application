@@ -1,4 +1,4 @@
-const fetch = require("node-fetch");
+const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const { performance } = require("perf_hooks");
 
 const endpoint = "http://n10250867-worker-alb-1006685742.ap-southeast-2.elb.amazonaws.com/transcode";
