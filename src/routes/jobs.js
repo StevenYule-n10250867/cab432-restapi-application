@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const { ffprobeJson, fileSizeBytes, sha256File } = require('../utils/mediaInfo');
 const { uploadFile, downloadFile } = require('../utils/s3');
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const { loadConfig } = require("../config");
 
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const sqs = new SQSClient({ region: "ap-southeast-2" });
