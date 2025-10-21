@@ -53,6 +53,10 @@ const { authMiddleware, requireGroup } = require('./src/middleware/authmiddlewar
     });
   });
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the CAB432 API. Use /health to check server status.');
+});
+
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
