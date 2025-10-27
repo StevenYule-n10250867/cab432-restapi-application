@@ -61,7 +61,7 @@ async function getJwtToken() {
     } else {
       const data = await res.json().catch(() => ({}));
       console.log(
-        `Request ${i} completed in ${duration.toFixed(2)}ms | jobId: ${data.jobId}`
+        `Request ${i} queued in ${duration.toFixed(2)}ms`
       );
     }
   } catch (err) {
